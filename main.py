@@ -33,7 +33,7 @@ def _win32_topmost(widget):
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEBUG          = False   # show overlay X/Y in main window title when dragging
-APP_WIDTH      = 320
+APP_WIDTH      = 350
 APP_HEIGHT     = 200
 OVERLAY_WIDTH  = 400     # overlay window width
 OVERLAY_HEIGHT = 320     # overlay window height
@@ -67,10 +67,10 @@ def _save_config(cfg: dict):
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 # ── Choices ───────────────────────────────────────────────────────────────────
-TRUE_FALSE = ["真", "假"]
-SPEED     = ["1 加速", "2 加速"]
-WATER     = ["1 水",   "2 水"]
-THUNDER   = ["1 雷",   "2 雷"]
+TRUE_FALSE = ["真", "？"]
+SPEED     = ["1 ⏩", "2 ⏩"]
+WATER     = ["1 💧",   "2 💧"]
+THUNDER   = ["1 ⚡",   "2 ⚡"]
 ICE       = ["1 冰",   "2 冰"]
 
 # ── Toggle helper for button-style radiobuttons ──────────────────────────────
@@ -211,20 +211,30 @@ class Overlay:
 
 
 # ── Widget builders ───────────────────────────────────────────────────────────
-def radio_group(parent, label: str, choices: list[str]) -> tk.StringVar:
+def radio_group(parent, label: str, choices: list,
+                color: str | None = None) -> tk.StringVar:
     var = tk.StringVar(value="")
     group = tk.Frame(parent, padx=0, pady=0)
     group.pack(fill=tk.X, pady=(0, 4))
-    tk.Label(group, text=label, font=FONT).pack(side=tk.LEFT, padx=(0, 6))
+    tk.Label(group, text=label, font=FONT_BOLD, fg=color or "black").pack(
+        side=tk.LEFT, padx=(0, 6), pady=0)
     cmd = _make_toggle(var)
     for choice in choices:
-        tk.Radiobutton(group, text=choice, value=choice, variable=var,
-                       indicatoron=False, padx=6, pady=2,
-                       font=FONT, cursor="hand2", command=cmd).pack(side=tk.LEFT, padx=2)
+        if isinstance(choice, tuple):
+            text, val = choice
+        else:
+            text = val = choice
+        opts = dict(indicatoron=False, padx=6, pady=1,
+                    font=FONT, cursor="hand2", command=cmd,
+                    takefocus=False)
+        if color:
+            opts["fg"] = color
+        tk.Radiobutton(group, text=text, value=val, variable=var, **opts).pack(
+            side=tk.LEFT, padx=2, anchor=tk.W)
     return var
 
 
-def radio_group_v(parent, choices: list[str]) -> tk.StringVar:
+def radio_group_v(parent, choices: list[str]) -> tuple[tk.StringVar, tk.Frame]:
     var = tk.StringVar(value="")
     group = tk.Frame(parent, padx=2, pady=0, borderwidth=0)
     group.pack(side=tk.LEFT, padx=1)
@@ -232,8 +242,9 @@ def radio_group_v(parent, choices: list[str]) -> tk.StringVar:
     for choice in choices:
         tk.Radiobutton(group, text=choice, value=choice, variable=var,
                        indicatoron=False, padx=6, pady=2,
-                       font=FONT, cursor="hand2", command=cmd).pack(side=tk.TOP, pady=0)
-    return var
+                       font=FONT, cursor="hand2", command=cmd,
+                       takefocus=False).pack(side=tk.TOP, pady=0)
+    return var, group
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -247,11 +258,11 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
     right_col = ttk.Frame(columns, padding=4)
     right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    fire    = radio_group(left_col, "火", TRUE_FALSE)
-    water   = radio_group(left_col, "水", TRUE_FALSE)
+    fire    = radio_group(left_col, "🔥", [("真 🔥", "真"), ("？ 🔥", "？")], color="#cc3300")
+    water   = radio_group(left_col, "💧", [("真 💧", "真"), ("？ 💧", "？")], color="#0066cc")
     ttk.Separator(left_col, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 4))
-    thunder = radio_group(left_col, "雷", ["假"])
-    ice     = radio_group(left_col, "冰", ["假"])
+    thunder = radio_group(left_col, "石化眼雷", ["？"])
+    ice     = radio_group(left_col, "二回目冰", ["？"])
 
     def round_block(parent, title: str) -> dict:
         frame = tk.Frame(parent, padx=0, pady=0)
@@ -263,22 +274,40 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
 
         tf_var = tk.StringVar(value="")
         tf_cmd = _make_toggle(tf_var)
-        for choice in TRUE_FALSE:
-            ttk.Radiobutton(title_row, text=choice, value=choice, variable=tf_var,
-                            cursor="hand2", command=tf_cmd).pack(side=tk.LEFT, padx=2)
+        for text, val in [("真十字", "真"), ("？十字", "？")]:
+            ttk.Radiobutton(title_row, text=text, value=val, variable=tf_var,
+                            cursor="hand2", command=tf_cmd,
+                            takefocus=False).pack(side=tk.LEFT, padx=2)
         tk.Frame(frame, height=4).pack(fill=tk.X)
 
         row = tk.Frame(frame)
         row.pack(fill=tk.X)
+        speed_var, speed_frame = radio_group_v(row, SPEED)
+        water_var, water_frame = radio_group_v(row, WATER)
+        thunder_var, thunder_frame = radio_group_v(row, THUNDER)
+
+        action_frames = [speed_frame, water_frame, thunder_frame]
+
+        def _set_action_state(enabled: bool):
+            st = tk.NORMAL if enabled else tk.DISABLED
+            for f in action_frames:
+                for child in f.winfo_children():
+                    child.configure(state=st)
+
+        _set_action_state(False)  # disabled by default
+
+        tf_var.trace_add("write", lambda *_:
+            _set_action_state(tf_var.get() != ""))
+
         return {
             "tf":      tf_var,
-            "speed":   radio_group_v(row, SPEED),
-            "water":   radio_group_v(row, WATER),
-            "thunder": radio_group_v(row, THUNDER),
+            "speed":   speed_var,
+            "water":   water_var,
+            "thunder": thunder_var,
         }
 
-    r1 = round_block(right_col, "第一輪大十字")
-    r2 = round_block(right_col, "第二輪大十字")
+    r1 = round_block(right_col, "1 回目")
+    r2 = round_block(right_col, "2 回目")
 
     all_vars = {"fire": fire, "water": water, "thunder": thunder, "ice": ice}
     for rnd, r in (("round1", r1), ("round2", r2)):
@@ -295,7 +324,7 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
         _toggle_state.clear()
 
     clear_btn = tk.Button(left_col, text="清除", font=FONT, cursor="hand2",
-                          command=clear_all)
+                          command=clear_all, takefocus=False)
     clear_btn.pack(side=tk.BOTTOM, anchor=tk.W, pady=(12, 0))
 
     for var in all_vars.values():
@@ -323,7 +352,7 @@ def main():
         app_y = (sh - APP_HEIGHT) // 2
 
     root.geometry(f"{APP_WIDTH}x{APP_HEIGHT}+{app_x}+{app_y}")
-    root.resizable(True, True)
+    root.resizable(False, False)
     root.attributes("-topmost", True)
     root.after(100, lambda: _win32_topmost(root))
 
@@ -340,6 +369,13 @@ def main():
 
     overlay = Overlay(root, ovl_x=ovl_x, ovl_y=ovl_y)
     build_ui(root, overlay)
+
+    _noop = lambda _e: "break"
+    for w in (root, overlay.win):
+        for seq in ("<Key>", "<space>", "<Key-space>"):
+            w.bind(seq, _noop, add=True)
+            w.unbind_all(seq)
+
     root.mainloop()
 
 
