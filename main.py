@@ -309,20 +309,34 @@ def main():
     cfg = _load_config()
     ovl_x = cfg.get("overlay_x", OVERLAY_X)
     ovl_y = cfg.get("overlay_y", OVERLAY_Y)
+    app_x = cfg.get("app_x")
+    app_y = cfg.get("app_y")
 
     root = tk.Tk()
     root.title("FF14 P4 Calculator")
 
-    # center main app on screen
-    sw = root.winfo_screenwidth()
-    sh = root.winfo_screenheight()
-    app_x = (sw - APP_WIDTH) // 2
-    app_y = (sh - APP_HEIGHT) // 2
+    if app_x is None or app_y is None:
+        # center main app on screen
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        app_x = (sw - APP_WIDTH) // 2
+        app_y = (sh - APP_HEIGHT) // 2
 
     root.geometry(f"{APP_WIDTH}x{APP_HEIGHT}+{app_x}+{app_y}")
     root.resizable(True, True)
     root.attributes("-topmost", True)
     root.after(100, lambda: _win32_topmost(root))
+
+    def _save_app_pos():
+        x = root.winfo_x()
+        y = root.winfo_y()
+        if x > 0 and y > 0:  # window is realized
+            cfg = _load_config()
+            cfg["app_x"] = x
+            cfg["app_y"] = y
+            _save_config(cfg)
+
+    root.bind("<Configure>", lambda _e: _save_app_pos())
 
     overlay = Overlay(root, ovl_x=ovl_x, ovl_y=ovl_y)
     build_ui(root, overlay)
