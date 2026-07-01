@@ -42,7 +42,7 @@ OVERLAY_Y      = 345     # initial screen Y position
 TEXT_X         = 200     # text X anchor within overlay (center) — default
 TEXT_Y         = 160     # text Y anchor within overlay (center) — default
 OVERLAY_FONT   = ("Microsoft YaHei", 18, "bold")
-STROKE_COLOR   = "#0088ff"   # blue outline
+STROKE_COLOR   = "#0044cc"   # deep blue outline
 FILL_COLOR     = "#ffffff"   # white text
 BG_COLOR       = "#000000"   # transparent key color
 FONT           = ("", 11)
@@ -172,11 +172,12 @@ class Overlay:
             display = f"{text}\n\nOVL_X={x} OVL_Y={y}" if text else f"OVL_X={x} OVL_Y={y}"
         if not display:
             return
-        # draw blue stroke by rendering text offset in a circle (16 samples)
+        # draw blue stroke by rendering text offset in a circle (16 samples, radius 2)
+        STROKE_R = 2
         for angle in range(0, 360, 22):
             rad = math.radians(angle)
-            dx = math.cos(rad)
-            dy = math.sin(rad)
+            dx = math.cos(rad) * STROKE_R
+            dy = math.sin(rad) * STROKE_R
             self.canvas.create_text(TEXT_X + dx, TEXT_Y + dy, text=display,
                                      font=OVERLAY_FONT, fill=STROKE_COLOR,
                                      anchor=tk.CENTER, justify=tk.LEFT)
