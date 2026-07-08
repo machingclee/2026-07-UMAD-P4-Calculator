@@ -33,8 +33,8 @@ def _win32_topmost(widget):
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DEBUG          = False   # show overlay X/Y in main window title when dragging
-APP_WIDTH      = 350
-APP_HEIGHT     = 200
+APP_WIDTH      = 420
+APP_HEIGHT     = 220
 OVERLAY_WIDTH  = 400     # overlay window width
 OVERLAY_HEIGHT = 320     # overlay window height
 OVERLAY_X      = 865     # initial screen X position
@@ -48,6 +48,7 @@ BG_COLOR       = "#000000"   # transparent key color
 FONT           = ("", 11)
 FONT_BOLD      = ("", 11, "bold")
 FONT_TITLE    = ("", 9)
+LABEL_WIDTH   = 5   # character width for row labels in round blocks
 
 if getattr(sys, "frozen", False):
     _APP_DIR = os.path.dirname(sys.executable)
@@ -258,30 +259,37 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
     right_col = ttk.Frame(columns, padding=4)
     right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    fire    = radio_group(left_col, "🔥", [("真 🔥", "真"), ("？ 🔥", "？")], color="#cc3300")
-    water   = radio_group(left_col, "💧", [("真 💧", "真"), ("？ 💧", "？")], color="#0066cc")
+    fire    = radio_group(left_col, "🔥", [("真—火", "真"), ("假—火", "？")], color="#cc3300")
+    water   = radio_group(left_col, "💧", [("真—水", "真"), ("假—水", "？")], color="#0066cc")
     ttk.Separator(left_col, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 4))
     thunder = radio_group(left_col, "石化眼雷", ["？"])
     ice     = radio_group(left_col, "二回目冰", ["？"])
 
-    def round_block(parent, title: str) -> dict:
+    def round_block(parent, title: str, row_labels: tuple = ()) -> dict:
         frame = tk.Frame(parent, padx=0, pady=0)
         frame.pack(fill=tk.X, pady=(0, 8))
 
         title_row = tk.Frame(frame)
         title_row.pack(fill=tk.X)
-        tk.Label(title_row, text=title, font=FONT_TITLE).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Label(title_row, text=title, font=FONT_TITLE, width=LABEL_WIDTH, anchor=tk.W).pack(
+            side=tk.LEFT, padx=(0, 6))
 
         tf_var = tk.StringVar(value="")
         tf_cmd = _make_toggle(tf_var)
-        for text, val in [("真十字", "真"), ("？十字", "？")]:
-            ttk.Radiobutton(title_row, text=text, value=val, variable=tf_var,
-                            cursor="hand2", command=tf_cmd,
-                            takefocus=False).pack(side=tk.LEFT, padx=2)
-        tk.Frame(frame, height=4).pack(fill=tk.X)
+        for text, val in [("真—十字", "真"), ("假—十字", "？")]:
+            tk.Radiobutton(title_row, text=text, value=val, variable=tf_var,
+                           indicatoron=False, padx=6, pady=1,
+                           font=FONT, cursor="hand2", command=tf_cmd,
+                           takefocus=False).pack(side=tk.LEFT, padx=2)
 
         row = tk.Frame(frame)
         row.pack(fill=tk.X)
+        if row_labels:
+            label_col = tk.Frame(row)
+            label_col.pack(side=tk.LEFT, padx=(0, 4))
+            for lbl in row_labels:
+                tk.Label(label_col, text=lbl, font=FONT, width=LABEL_WIDTH, anchor=tk.W).pack(
+                    side=tk.TOP, pady=2)
         speed_var, speed_frame = radio_group_v(row, SPEED)
         water_var, water_frame = radio_group_v(row, WATER)
         thunder_var, thunder_frame = radio_group_v(row, THUNDER)
@@ -306,8 +314,9 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
             "thunder": thunder_var,
         }
 
-    r1 = round_block(right_col, "1 回目")
-    r2 = round_block(right_col, "2 回目")
+    r1 = round_block(right_col, "1st", row_labels=("< 50", "1m"))
+    ttk.Separator(right_col, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(6, 4))
+    r2 = round_block(right_col, "2nd", row_labels=("< 35", "1m|<59"))
 
     all_vars = {"fire": fire, "water": water, "thunder": thunder, "ice": ice}
     for rnd, r in (("round1", r1), ("round2", r2)):
