@@ -270,7 +270,7 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
         frame.pack(fill=tk.X, pady=(0, 8))
 
         title_row = tk.Frame(frame)
-        title_row.pack(fill=tk.X)
+        title_row.pack(fill=tk.X, pady=(0, 4))
         tk.Label(title_row, text=title, font=FONT_TITLE, width=LABEL_WIDTH, anchor=tk.W).pack(
             side=tk.LEFT, padx=(0, 6))
 
@@ -294,34 +294,88 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
         water_var, water_frame = radio_group_v(row, WATER)
         thunder_var, thunder_frame = radio_group_v(row, THUNDER)
 
-        action_frames = [speed_frame, water_frame, thunder_frame]
+        action_frames = {"speed": speed_frame, "water": water_frame, "thunder": thunder_frame}
+        _excluded_keys = set()  # mutable — set by cross-group exclusion
 
-        def _set_action_state(enabled: bool):
-            st = tk.NORMAL if enabled else tk.DISABLED
-            for f in action_frames:
+        # capture original button styling & text so we can hide/restore
+        _first_btn = speed_frame.winfo_children()[0]
+        _orig = {k: _first_btn.cget(k) for k in
+                 ("fg", "bg", "activeforeground", "activebackground", "relief")}
+        _btn_info = {}  # child -> {"text": ..., "width": needed width in chars}
+        for f in action_frames.values():
+            for child in f.winfo_children():
+                t = child.cget("text")
+                _btn_info[child] = {"text": t, "width": max(len(t), 3)}
+
+        def _apply_button(child, st, text, relief, fg, bg, afg, abg, bd=None):
+            kwargs = dict(state=st, text=text, relief=relief,
+                          fg=fg, bg=bg, activeforeground=afg, activebackground=abg,
+                          disabledforeground=fg, highlightthickness=0)
+            if bd is not None:
+                kwargs["bd"] = bd
+            child.configure(**kwargs)
+
+        def _refresh_actions(*_):
+            local_on = tf_var.get() != ""
+            for key, f in action_frames.items():
+                excluded = key in _excluded_keys
+                st = tk.DISABLED if not local_on or excluded else tk.NORMAL
                 for child in f.winfo_children():
-                    child.configure(state=st)
+                    if excluded:
+                        # always hide — regardless of whether this round is active
+                        info = _btn_info[child]
+                        _apply_button(child, st, "", tk.FLAT,
+                                      _orig["bg"], _orig["bg"],
+                                      _orig["bg"], _orig["bg"])
+                        child.configure(width=info["width"])
+                    elif not local_on:
+                        info = _btn_info[child]
+                        _apply_button(child, st, info["text"], _orig["relief"],
+                                      _orig["fg"], _orig["bg"],
+                                      _orig["activeforeground"], _orig["activebackground"])
+                    else:
+                        info = _btn_info[child]
+                        _apply_button(child, st, info["text"], _orig["relief"],
+                                      _orig["fg"], _orig["bg"],
+                                      _orig["activeforeground"], _orig["activebackground"])
 
-        _set_action_state(False)  # disabled by default
+        _refresh_actions()
 
-        tf_var.trace_add("write", lambda *_:
-            _set_action_state(tf_var.get() != ""))
+        tf_var.trace_add("write", _refresh_actions)
 
         return {
             "tf":      tf_var,
             "speed":   speed_var,
             "water":   water_var,
             "thunder": thunder_var,
+            "frames":  action_frames,
+            "_excluded": _excluded_keys,
+            "_refresh": _refresh_actions,
         }
 
-    r1 = round_block(right_col, "1st", row_labels=("< 50", "1m"))
+    r1 = round_block(right_col, "1st", row_labels=("0~50", "1m"))
     ttk.Separator(right_col, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(6, 4))
-    r2 = round_block(right_col, "2nd", row_labels=("< 35", "1m|<59"))
+    r2 = round_block(right_col, "2nd", row_labels=("0~35", "36~1m"))
+
+    # cross-exclusion: a category selected in one group disables that
+    # entire category in the other group
+    for r_src, r_dst in ((r1, r2), (r2, r1)):
+        for key in ("speed", "water", "thunder"):
+            def _make_cb(src_var=r_src[key], k=key, excl=r_dst["_excluded"], refresh=r_dst["_refresh"]):
+                def _cb(*_):
+                    if src_var.get():
+                        excl.add(k)
+                    else:
+                        excl.discard(k)
+                    refresh()
+                return _cb
+            r_src[key].trace_add("write", _make_cb())
 
     all_vars = {"fire": fire, "water": water, "thunder": thunder, "ice": ice}
     for rnd, r in (("round1", r1), ("round2", r2)):
         for k, v in r.items():
-            all_vars[f"{rnd}_{k}"] = v
+            if isinstance(v, tk.StringVar):
+                all_vars[f"{rnd}_{k}"] = v
 
     def on_change(*_):
         state = {n: v.get() for n, v in all_vars.items()}
