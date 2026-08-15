@@ -1,5 +1,7 @@
 # Introduction
 
+## Python Version
+
 A simple project to record UMAD P4-mechanics and calculate what it actually means in Chinese.
 
 ![alt text](image.png)
@@ -15,3 +17,10 @@ Now updated to:
 
 <img width="343" height="225" alt="image" src="https://github.com/user-attachments/assets/ef4c393d-874f-4c94-bd5f-32450584b54c" />
 
+## Tauri Version
+
+The same application is revamped into Tauri for better customizable UI:
+
+![alt text](image-1.png)
+
+This is also downloadable in the release page of this github project.

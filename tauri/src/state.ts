@@ -1,5 +1,7 @@
 export type State = Record<string, string>;
 
+export { ICE, SPEED, THUNDER, TRUE_FALSE, WATER } from "./constants";
+
 export const EMPTY_STATE: State = {
   fire: "",
   water: "",
@@ -14,10 +16,6 @@ export const EMPTY_STATE: State = {
   round2_water: "",
   round2_thunder: "",
 };
-
-export const SPEED = ["1 ⏩", "2 ⏩"];
-export const WATER = ["1 💧", "2 💧"];
-export const THUNDER = ["1 ⚡", "2 ⚡"];
 
 export function toggleValue(current: string, next: string): string {
   return current === next ? "" : next;

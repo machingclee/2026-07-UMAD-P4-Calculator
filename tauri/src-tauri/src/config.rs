@@ -12,6 +12,12 @@ pub struct Config {
     pub app_x: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_width: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_height: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
 }
 
 /// Same as python/main.py: config.json lives next to the executable.

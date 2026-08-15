@@ -22,8 +22,6 @@ mod imp {
     const WS_EX_TOPMOST: i32 = 0x0000_0008;
     const WS_EX_TOOLWINDOW: i32 = 0x0000_0080;
     const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
-    const WS_EX_LAYERED: i32 = 0x0008_0000;
-    const LWA_COLORKEY: u32 = 0x0000_0001;
     const GWL_EXSTYLE: i32 = -20;
     const SW_RESTORE: i32 = 9;
     const ERROR_ALREADY_EXISTS: u32 = 183;
@@ -51,12 +49,6 @@ mod imp {
             uFlags: u32,
         ) -> i32;
         fn keybd_event(bVk: u8, bScan: u8, dwFlags: u32, dwExtraInfo: usize);
-        fn SetLayeredWindowAttributes(
-            hwnd: HWND,
-            crKey: u32,
-            bAlpha: u8,
-            dwFlags: u32,
-        ) -> i32;
     }
 
     #[link(name = "kernel32")]
@@ -120,8 +112,31 @@ mod imp {
         false
     }
 
-    /// Same as python `_win32_topmost`.
+    /// Keep the main window above the game. Do not set `WS_EX_TOOLWINDOW` —
+    /// that caption has only a close button and stays off the taskbar, so
+    /// minimize would be useless.
     pub fn force_topmost_window(window: &WebviewWindow) {
+        let Some(hwnd) = hwnd_of(window) else {
+            return;
+        };
+        unsafe {
+            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_TOPMOST);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            );
+        }
+    }
+
+    /// Topmost overlay. Transparency is per-pixel WebView2 alpha, not a color-key:
+    /// `SetLayeredWindowAttributes(LWA_COLORKEY)` would disable that and leave a black box.
+    pub fn apply_overlay_style(window: &WebviewWindow) {
         let Some(hwnd) = hwnd_of(window) else {
             return;
         };
@@ -132,31 +147,6 @@ mod imp {
                 GWL_EXSTYLE,
                 ex | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             );
-            SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            );
-        }
-    }
-
-    /// Topmost + color-key black, matching tkinter `-transparentcolor` / `_win32_topmost`.
-    pub fn apply_overlay_style(window: &WebviewWindow) {
-        let Some(hwnd) = hwnd_of(window) else {
-            return;
-        };
-        unsafe {
-            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
-            SetWindowLongW(
-                hwnd,
-                GWL_EXSTYLE,
-                ex | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
-            );
-            SetLayeredWindowAttributes(hwnd, 0x0000_0000, 0, LWA_COLORKEY);
             SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,

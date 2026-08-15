@@ -19,7 +19,7 @@ fn actions(selections: &State, prefix: &str) -> Vec<&'static str> {
         let wat = get(selections, &format!("{rnd}_water"));
         let thu = get(selections, &format!("{rnd}_thunder"));
         if spd.contains(prefix) {
-            out.push(if is_true { "不動" } else { "動" });
+            out.push(if is_true { "不動" } else { "要動" });
         }
         if wat.contains(prefix) {
             out.push(if is_true { "水分攤" } else { "水出去" });
@@ -136,7 +136,7 @@ mod tests {
                 ("round1_water", "1 💧"),
                 ("round1_thunder", "1 ⚡"),
             ])),
-            "R1 動  水出去  雷分攤\n  面對眼"
+            "R1 要動  水出去  雷分攤\n  面對眼"
         );
     }
 
@@ -194,7 +194,7 @@ mod tests {
             ("round2_tf", "？"),
             ("round2_speed", "1 ⏩"),
         ]));
-        assert_eq!(text, "R1 動\n  背對眼\n\nR2\n  面對眼");
+        assert_eq!(text, "R1 要動\n  背對眼\n\nR2\n  面對眼");
     }
 
     #[test]

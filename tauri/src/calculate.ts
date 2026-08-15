@@ -14,7 +14,7 @@ function actions(selections: State, prefix: string): string[] {
     const spd = get(selections, `${rnd}_speed`);
     const wat = get(selections, `${rnd}_water`);
     const thu = get(selections, `${rnd}_thunder`);
-    if (spd.includes(prefix)) out.push(isTrue ? "不動" : "動");
+    if (spd.includes(prefix)) out.push(isTrue ? "不動" : "要動");
     if (wat.includes(prefix)) out.push(isTrue ? "水分攤" : "水出去");
     if (thu.includes(prefix)) out.push(isTrue ? "雷出去" : "雷分攤");
   }

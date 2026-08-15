@@ -1,24 +1,56 @@
 mod calculate;
 mod config;
+mod constants;
 mod win32;
 
 use calculate::State;
+use constants::{DEBUG, OVERLAY_HEIGHT, OVERLAY_WIDTH, OVERLAY_X, OVERLAY_Y};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 
-const APP_WIDTH: f64 = 420.0;
-const APP_HEIGHT: f64 = 220.0;
-const OVERLAY_WIDTH: f64 = 400.0;
-const OVERLAY_HEIGHT: f64 = 320.0;
-const OVERLAY_X: f64 = 865.0;
-const OVERLAY_Y: f64 = 345.0;
+/// Ignore the create-time Resized event so it does not overwrite a saved size.
+static PERSIST_SIZE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 fn calculate_text(app: tauri::AppHandle, state: State) -> String {
     let text = calculate::calculate(&state);
     let _ = app.emit("overlay-text", &text);
     text
+}
+
+#[tauri::command]
+fn get_theme() -> String {
+    config::load()
+        .theme
+        .filter(|t| t == "dark" || t == "light")
+        .unwrap_or_else(|| "light".into())
+}
+
+#[tauri::command]
+fn set_theme(theme: String) {
+    let theme = if theme == "dark" {
+        "dark"
+    } else {
+        "light"
+    };
+    config::update(|c| c.theme = Some(theme.into()));
+}
+
+fn persist_resized(label: &str, size: PhysicalSize<u32>, scale: f64) {
+    if !PERSIST_SIZE.load(Ordering::SeqCst) || label != "main" || scale <= 0.0 {
+        return;
+    }
+    let width = (size.width as f64 / scale).round() as i32;
+    let height = (size.height as f64 / scale).round() as i32;
+    if width > 0 && height > 0 {
+        config::update(|c| {
+            c.app_width = Some(width);
+            c.app_height = Some(height);
+        });
+    }
 }
 
 fn persist_moved(label: &str, x: i32, y: i32) {
@@ -47,9 +79,27 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![calculate_text])
+        .invoke_handler(tauri::generate_handler![calculate_text, get_theme, set_theme])
         .on_window_event(|window, event| match event {
-            WindowEvent::Moved(pos) => persist_moved(window.label(), pos.x, pos.y),
+            WindowEvent::Resized(size) => {
+                persist_resized(
+                    window.label(),
+                    *size,
+                    window.scale_factor().unwrap_or(1.0),
+                );
+            }
+            WindowEvent::Moved(pos) => {
+                persist_moved(window.label(), pos.x, pos.y);
+                if DEBUG && window.label() == "overlay" {
+                    if let Some(main) = window.app_handle().get_webview_window("main") {
+                        let _ = main.set_title(&format!(
+                            "OVERLAY_X={}  OVERLAY_Y={}",
+                            pos.x, pos.y
+                        ));
+                    }
+                    let _ = window.app_handle().emit("overlay-pos", (pos.x, pos.y));
+                }
+            }
             WindowEvent::Destroyed if window.label() == "main" => {
                 if let Some(ovl) = window.app_handle().get_webview_window("overlay") {
                     let _ = ovl.close();
@@ -63,23 +113,22 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
 
-            match (cfg.app_x, cfg.app_y) {
-                (Some(x), Some(y)) => {
-                    let _ = main.set_position(PhysicalPosition::new(x, y));
-                }
-                _ => {
-                    if let Ok(Some(monitor)) = main.primary_monitor() {
-                        let size = monitor.size();
-                        let scale = monitor.scale_factor();
-                        let width = (APP_WIDTH * scale) as i32;
-                        let height = (APP_HEIGHT * scale) as i32;
-                        let x = (size.width as i32 - width) / 2;
-                        let y = (size.height as i32 - height) / 2;
-                        let _ = main.set_position(PhysicalPosition::new(x, y));
-                    }
+            if let (Some(width), Some(height)) = (cfg.app_width, cfg.app_height) {
+                if width > 0 && height > 0 {
+                    let _ = main.set_size(LogicalSize::new(width as f64, height as f64));
                 }
             }
+            let _ = main.set_theme(Some(if cfg.theme.as_deref() == Some("dark") {
+                tauri::Theme::Dark
+            } else {
+                tauri::Theme::Light
+            }));
+
+            if let (Some(x), Some(y)) = (cfg.app_x, cfg.app_y) {
+                let _ = main.set_position(PhysicalPosition::new(x, y));
+            }
             let _ = main.show();
+            PERSIST_SIZE.store(true, Ordering::SeqCst);
 
             let ovl_x = cfg.overlay_x.unwrap_or(OVERLAY_X as i32);
             let ovl_y = cfg.overlay_y.unwrap_or(OVERLAY_Y as i32);
@@ -94,6 +143,7 @@ pub fn run() {
             .decorations(false)
             .always_on_top(true)
             .transparent(true)
+            .background_color(tauri::window::Color(0, 0, 0, 0))
             .shadow(false)
             .resizable(false)
             .skip_taskbar(true)
@@ -101,6 +151,10 @@ pub fn run() {
             .visible(true)
             .build()?;
             let _ = overlay.set_position(PhysicalPosition::new(ovl_x, ovl_y));
+            if DEBUG {
+                let _ = main.set_title(&format!("OVERLAY_X={ovl_x}  OVERLAY_Y={ovl_y}"));
+                let _ = overlay.emit("overlay-pos", (ovl_x, ovl_y));
+            }
 
             let main_hwnd = main.clone();
             let overlay_hwnd = overlay.clone();
