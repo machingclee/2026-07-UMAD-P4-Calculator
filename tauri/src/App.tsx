@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { calculate } from "./calculate";
+import { overlayText } from "./calculate";
 import { isTauri, publishOverlayDrag, publishOverlayText } from "./env";
 import {
   Theme,
@@ -414,7 +414,7 @@ function App() {
       invoke("calculate_text", { state }).catch(() => { });
       return;
     }
-    publishOverlayText(calculate(state));
+    publishOverlayText(overlayText(state));
   }, [state]);
 
   useEffect(() => {

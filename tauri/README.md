@@ -1,8 +1,8 @@
 # FF14 P4 Calculator (Tauri)
 
-Windows remake of `../main.py`: same calculation, same toggle / cross-exclusion UI, same `config.json` next to the executable, and the same Win32 topmost / single-instance overlay behaviour.
+Windows remake of `../main.py`: same calculation, same toggle / cross-exclusion UI, and the same Win32 topmost / single-instance overlay behaviour.
 
-Adjustable knobs (overlay font/position, colors, choice labels) live at the top of `src/constants.ts`. Main window size and position are stored in `config.json` after you resize or move in 變更 mode. Overlay default position is in `src-tauri/src/constants.rs`.
+Adjustable knobs (overlay font/position, colors, choice labels) live at the top of `src/constants.ts`. Window size, position, and theme persist after you move or resize in 變更 mode. Overlay default position is in `src-tauri/src/constants.rs`.
 
 ## Develop on macOS (browser UI)
 
@@ -30,7 +30,13 @@ Release build:
 npm run build:exe
 ```
 
-The installer / exe land under `src-tauri/target/release/`. `config.json` is written next to the running executable (`overlay_x`, `overlay_y`, `app_x`, `app_y`), matching the Python app.
+The installer / exe land under `src-tauri/target/release/`.
+
+In a **release** build, settings are stored per user at:
+
+`%AppData%\com.ff14.p4calculator\config.json`
+
+(`app_x`, `app_y`, `app_width`, `app_height`, `overlay_x`, `overlay_y`, `theme`). Debug builds still write `config.json` next to the exe. If AppData has no file yet, an older next-to-exe config is copied once.
 
 ## Notes
 

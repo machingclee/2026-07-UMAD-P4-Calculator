@@ -1,3 +1,4 @@
+import { OVERLAY_HINT } from "./constants";
 import type { State } from "./state";
 
 function get(state: State, key: string): string {
@@ -46,4 +47,12 @@ export function calculate(state: State): string {
     }
   }
   return lines.join("\n");
+}
+
+/** Overlay payload: hint once at the top after any button is set. */
+export function overlayText(state: State): string {
+  const started = Object.values(state).some(Boolean);
+  if (!started) return "";
+  const body = calculate(state);
+  return body ? `${OVERLAY_HINT}\n\n${body}` : OVERLAY_HINT;
 }

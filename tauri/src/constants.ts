@@ -20,6 +20,7 @@ export const STROKE_COLOR = "#0044cc"; // deep blue outline
 export const STROKE_RADIUS = 2;
 export const STROKE_STEP_DEG = 22;
 export const FILL_COLOR = "#ffffff"; // white text
+export const OVERLAY_HINT = "金身撞相反，紫身撞相同";
 export const BG_COLOR = "transparent"; // Python used #000000 as a Win32 color-key
 export const DRAG_BG = "rgba(0, 0, 0, 0.55)"; // text plate while dragging is enabled
 
