@@ -3,6 +3,7 @@ import json
 import math
 import os
 import sys
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -16,6 +17,7 @@ _WS_EX_TOPMOST  = 0x00000008
 _WS_EX_TOOLWINDOW = 0x00000080
 _WS_EX_NOACTIVATE = 0x08000000
 _GWL_EXSTYLE    = -20
+_SW_RESTORE     = 9
 
 
 def _win32_topmost(widget):
@@ -140,6 +142,9 @@ class Overlay:
         self._ovl_y = ovl_y
         self._on_pos_changed = None  # callback(ovl_x, ovl_y)
         self.win = tk.Toplevel()
+        # give the overlay its own title so title-based window lookup
+        # (second-instance restore) only ever finds the main window
+        self.win.title("FF14 P4 Calculator Overlay")
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
         self.win.attributes("-transparentcolor", BG_COLOR)
@@ -397,7 +402,59 @@ def build_ui(root: tk.Tk, overlay: Overlay) -> dict:
     return all_vars
 
 
+_MUTEX_NAME = "FF14-P4-Calculator-single-instance"
+_MUTEX_HANDLE = None  # keep the first instance's mutex handle alive
+
+
+def _already_running() -> bool:
+    """True if another instance of this app is already running (named mutex)."""
+    global _MUTEX_HANDLE
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    kernel32.GetLastError.restype = ctypes.c_ulong
+    _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, _MUTEX_NAME)
+    return kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+
+
+def _bring_existing_to_front() -> bool:
+    """Restore and focus the already-running instance's main window."""
+    user32 = ctypes.windll.user32
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.GetWindowLongW.restype = ctypes.c_long
+    user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+    user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    user32.SetForegroundWindow.restype = ctypes.c_int
+    user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_uint]
+    for _ in range(8):
+        hwnd = user32.FindWindowW(None, "FF14 P4 Calculator")
+        if hwnd:
+            user32.ShowWindow(hwnd, _SW_RESTORE)
+            # temporarily strip WS_EX_NOACTIVATE so Windows allows activation
+            ex = user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+            user32.SetWindowLongW(hwnd, _GWL_EXSTYLE, ex & ~_WS_EX_NOACTIVATE)
+            if not user32.SetForegroundWindow(hwnd):
+                # Windows foreground lock — a stray Alt press releases it
+                user32.keybd_event(0x12, 0, 0, 0)   # Alt down
+                user32.keybd_event(0x12, 0, 2, 0)   # Alt up
+                user32.SetForegroundWindow(hwnd)
+            user32.SetWindowPos(hwnd, _HWND_TOPMOST, 0, 0, 0, 0,
+                                _SWP_NOMOVE | _SWP_NOSIZE | _SWP_SHOWWINDOW)
+            user32.SetWindowLongW(hwnd, _GWL_EXSTYLE, ex)  # restore styles
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def main():
+    if _already_running():
+        _bring_existing_to_front()  # un-minimize the running instance
+        sys.exit(0)
     cfg = _load_config()
     ovl_x = cfg.get("overlay_x", OVERLAY_X)
     ovl_y = cfg.get("overlay_y", OVERLAY_Y)
