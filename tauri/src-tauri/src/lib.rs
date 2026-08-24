@@ -5,7 +5,8 @@ mod win32;
 
 use calculate::State;
 use constants::{
-    DEBUG, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X, OVERLAY_Y,
+    APP_HEIGHT, APP_WIDTH, DEBUG, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X,
+    OVERLAY_Y,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
@@ -126,6 +127,11 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
 
+            #[cfg(debug_assertions)]
+            {
+                let _ = main.set_size(LogicalSize::new(APP_WIDTH, APP_HEIGHT));
+            }
+            #[cfg(not(debug_assertions))]
             if let (Some(width), Some(height)) = (cfg.app_width, cfg.app_height) {
                 if width > 0 && height > 0 {
                     let _ = main.set_size(LogicalSize::new(width as f64, height as f64));

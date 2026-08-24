@@ -30,7 +30,7 @@ export function calculate(state: State): string {
     ["round2", "2"],
   ] as const) {
     const tf = get(state, `${rnd}_tf`);
-    const eye = tf === "真" ? "背對眼" : tf ? "面對眼" : "";
+    const eye = tf === "真" ? "背眼" : tf ? "望眼" : "";
     const acts = actions(state, prefix);
     if (!tf && acts.length === 0) continue;
     if (lines.length) lines.push("");

@@ -22,10 +22,10 @@ fn actions(selections: &State, prefix: &str) -> Vec<&'static str> {
             out.push(if is_true { "不動" } else { "要動" });
         }
         if wat.contains(prefix) {
-            out.push(if is_true { "水分攤" } else { "水出去" });
+            out.push(if is_true { "水分攤" } else { "水出" });
         }
         if thu.contains(prefix) {
-            out.push(if is_true { "雷出去" } else { "雷分攤" });
+            out.push(if is_true { "雷出" } else { "雷分攤" });
         }
     }
     out
@@ -37,9 +37,9 @@ pub fn calculate(state: &State) -> String {
     for (rnd, prefix) in [("round1", "1"), ("round2", "2")] {
         let tf = get(state, &format!("{rnd}_tf"));
         let eye = if tf == "真" {
-            "背對眼"
+            "背眼"
         } else if !tf.is_empty() {
-            "面對眼"
+            "望眼"
         } else {
             ""
         };
@@ -100,14 +100,14 @@ mod tests {
 
     #[test]
     fn r1_true_cross_only() {
-        assert_eq!(calculate(&s(&[("round1_tf", "真")])), "R1\n  背對眼");
+        assert_eq!(calculate(&s(&[("round1_tf", "真")])), "R1\n  背眼");
     }
 
     #[test]
     fn r1_false_cross_with_fire() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "？"), ("fire", "真")])),
-            "R1\n  面對眼\n  放鋼鐵"
+            "R1\n  望眼\n  放鋼鐵"
         );
     }
 
@@ -115,7 +115,7 @@ mod tests {
     fn r1_true_fire_fake() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "真"), ("fire", "？")])),
-            "R1\n  背對眼\n  放月環"
+            "R1\n  背眼\n  放月環"
         );
     }
 
@@ -123,7 +123,7 @@ mod tests {
     fn r1_speed1_true() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "真"), ("round1_speed", "1 ⏩")])),
-            "R1 不動\n  背對眼"
+            "R1 不動\n  背眼"
         );
     }
 
@@ -136,7 +136,7 @@ mod tests {
                 ("round1_water", "1 💧"),
                 ("round1_thunder", "1 ⚡"),
             ])),
-            "R1 要動  水出去  雷分攤\n  面對眼"
+            "R1 要動  水出  雷分攤\n  望眼"
         );
     }
 
@@ -144,7 +144,7 @@ mod tests {
     fn r2_true_water_true() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "真"), ("water", "真")])),
-            "R2\n  背對眼\n  放月環"
+            "R2\n  背眼\n  放月環"
         );
     }
 
@@ -152,7 +152,7 @@ mod tests {
     fn r2_false_water_fake() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "？"), ("water", "？")])),
-            "R2\n  面對眼\n  放鋼鐵"
+            "R2\n  望眼\n  放鋼鐵"
         );
     }
 
@@ -165,7 +165,7 @@ mod tests {
                 ("round2_water", "2 💧"),
                 ("round2_thunder", "2 ⚡"),
             ])),
-            "R2 不動  水分攤  雷出去\n  背對眼"
+            "R2 不動  水分攤  雷出\n  背眼"
         );
     }
 
@@ -181,7 +181,7 @@ mod tests {
         ]));
         assert_eq!(
             text,
-            "R1 不動\n  背對眼\n  放鋼鐵\n\nR2 水出去\n  面對眼\n  放月環"
+            "R1 不動\n  背眼\n  放鋼鐵\n\nR2 水出\n  望眼\n  放月環"
         );
     }
 
@@ -194,12 +194,12 @@ mod tests {
             ("round2_tf", "？"),
             ("round2_speed", "1 ⏩"),
         ]));
-        assert_eq!(text, "R1 要動\n  背對眼\n\nR2\n  面對眼");
+        assert_eq!(text, "R1 要動\n  背眼\n\nR2\n  望眼");
     }
 
     #[test]
     fn r2_only_from_r1_prefixed_action() {
         let text = calculate(&s(&[("round1_tf", "真"), ("round1_water", "2 💧")]));
-        assert_eq!(text, "R1\n  背對眼\n\nR2 水分攤");
+        assert_eq!(text, "R1\n  背眼\n\nR2 水分攤");
     }
 }

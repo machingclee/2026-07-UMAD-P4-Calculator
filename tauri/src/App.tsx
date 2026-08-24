@@ -18,6 +18,7 @@ import {
   ACTION_BTN_PAD_BOTTOM,
   ACTION_BTN_PAD_TOP,
   ACTION_BTN_WIDTH,
+  ACTION_EXCLUDED_OPACITY,
   ACTION_ICON_SIZE,
   EMOJI_SIZE,
   FIRE_COLOR,
@@ -61,7 +62,7 @@ function toggleClass(
   if (hidden) {
     return stacked
       ? "pointer-events-none box-border shrink-0 appearance-none border border-transparent bg-transparent text-transparent shadow-none"
-      : "pointer-events-none min-w-[2.4em] appearance-none border border-transparent bg-transparent text-transparent shadow-none";
+      : "pointer-events-none min-w-[2.4em] appearance-none rounded-sm border px-1.5 py-px font-[inherit] text-[length:var(--font-size)] leading-snug opacity-0";
   }
   const base = stacked
     ? "relative z-10 box-border shrink-0 overflow-visible appearance-none rounded-sm border px-1 font-[inherit] text-[length:var(--font-size)] leading-none pointer-events-auto"
@@ -223,7 +224,7 @@ function ToggleButton({
       tabIndex={-1}
       onClick={onClick}
     >
-      {hidden ? (
+      {hidden && badge ? (
         ""
       ) : badge ? (
         <ActionIconButton text={text} badge={badge} />
@@ -276,18 +277,19 @@ function RadioGroupV({
   badges,
   value,
   disabled,
-  hidden,
   onChange,
 }: {
   choices: readonly string[];
   badges: readonly string[];
   value: string;
   disabled: boolean;
-  hidden: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div
+      className="flex min-w-0 flex-col gap-1"
+      style={disabled ? { opacity: ACTION_EXCLUDED_OPACITY } : undefined}
+    >
       {choices.map((choice, i) => (
         <ToggleButton
           key={choice}
@@ -295,7 +297,6 @@ function RadioGroupV({
           badge={badges[i]}
           selected={value === choice}
           disabled={disabled}
-          hidden={hidden}
           onClick={() => onChange(toggleValue(value, choice))}
         />
       ))}
@@ -334,11 +335,13 @@ function RoundBlock({
           <ToggleButton
             text="真 十字"
             selected={tf === TRUE_FALSE[0]}
+            hidden={tf === TRUE_FALSE[1]}
             onClick={() => setField(`${rnd}_tf`, toggleValue(tf, TRUE_FALSE[0]))}
           />
           <ToggleButton
             text="❓ 十字"
             selected={tf === TRUE_FALSE[1]}
+            hidden={tf === TRUE_FALSE[0]}
             onClick={() => setField(`${rnd}_tf`, toggleValue(tf, TRUE_FALSE[1]))}
           />
         </div>
@@ -348,7 +351,6 @@ function RoundBlock({
             badges={rowLabels}
             value={state[`${rnd}_speed`] ?? ""}
             disabled={speedEx}
-            hidden={speedEx}
             onChange={(v) => setField(`${rnd}_speed`, v)}
           />
           <RadioGroupV
@@ -356,7 +358,6 @@ function RoundBlock({
             badges={rowLabels}
             value={state[`${rnd}_water`] ?? ""}
             disabled={waterEx}
-            hidden={waterEx}
             onChange={(v) => setField(`${rnd}_water`, v)}
           />
           <RadioGroupV
@@ -364,7 +365,6 @@ function RoundBlock({
             badges={rowLabels}
             value={state[`${rnd}_thunder`] ?? ""}
             disabled={thunderEx}
-            hidden={thunderEx}
             onChange={(v) => setField(`${rnd}_thunder`, v)}
           />
         </div>

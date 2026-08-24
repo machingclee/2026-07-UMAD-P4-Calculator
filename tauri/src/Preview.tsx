@@ -1,13 +1,16 @@
 import App from "./App";
 import Overlay from "./Overlay";
-import { OVERLAY_HEIGHT, OVERLAY_WIDTH } from "./constants";
+import { APP_HEIGHT, APP_WIDTH, OVERLAY_HEIGHT, OVERLAY_WIDTH } from "./constants";
 
 export default function Preview() {
   return (
     <div className="flex flex-wrap items-start gap-6 p-6">
       <div className="flex flex-col gap-2">
         <div className="text-xs leading-tight text-[#bbb]">Main</div>
-        <div className="h-[220px] w-[420px] overflow-hidden bg-[var(--app-bg)] text-black shadow-[0_8px_24px_rgba(0,0,0,0.4)] dark:text-[#e8e8e8]">
+        <div
+          className="overflow-hidden bg-[var(--app-bg)] text-black shadow-[0_8px_24px_rgba(0,0,0,0.4)] dark:text-[#e8e8e8]"
+          style={{ width: APP_WIDTH, height: APP_HEIGHT }}
+        >
           <App />
         </div>
       </div>
