@@ -78,6 +78,7 @@ mod imp {
     static MAIN_HWND: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
     static TITLEBAR_SHADED: AtomicBool = AtomicBool::new(false);
     static SHADE_FROM_BOTTOM: AtomicBool = AtomicBool::new(true);
+    static INPUT_ENABLED: AtomicBool = AtomicBool::new(false);
     static RESTORED_CX: AtomicI32 = AtomicI32::new(0);
     static RESTORED_CY: AtomicI32 = AtomicI32::new(0);
     static SAVED_STYLE: AtomicI32 = AtomicI32::new(0);
@@ -579,6 +580,23 @@ mod imp {
         }
     }
 
+    fn clear_noactivate_style(hwnd: HWND) {
+        if hwnd.is_null() {
+            return;
+        }
+        unsafe {
+            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            if ex & WS_EX_NOACTIVATE != 0 {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !WS_EX_NOACTIVATE);
+            }
+        }
+    }
+
+    unsafe extern "system" fn enum_activate(hwnd: HWND, _lparam: isize) -> i32 {
+        clear_noactivate_style(hwnd);
+        1
+    }
+
     fn subclass_noactivate(hwnd: HWND) {
         if hwnd.is_null() {
             return;
@@ -607,6 +625,9 @@ mod imp {
         lparam: isize,
     ) -> isize {
         if msg == WM_MOUSEACTIVATE {
+            if INPUT_ENABLED.load(Ordering::SeqCst) {
+                return call_old_wndproc(hwnd, msg, wparam, lparam);
+            }
             return MA_NOACTIVATE;
         }
         if msg == WM_PARENTNOTIFY && (wparam as u32 & 0xffff) == WM_CREATE {
@@ -734,6 +755,9 @@ mod imp {
     /// Clickable but never activated: the previous foreground window (the game)
     /// keeps keyboard focus. Must run on the window thread.
     pub fn prevent_activation(window: &WebviewWindow) {
+        if INPUT_ENABLED.load(Ordering::SeqCst) {
+            return;
+        }
         let Some(hwnd) = hwnd_of(window) else {
             return;
         };
@@ -741,6 +765,29 @@ mod imp {
         subclass_noactivate(hwnd);
         unsafe {
             EnumChildWindows(hwnd, Some(enum_noactivate), 0);
+        }
+    }
+
+    /// Allow the main window to take keyboard focus (變更 → 自定義).
+    pub fn set_input_enabled(window: &WebviewWindow, enabled: bool) {
+        INPUT_ENABLED.store(enabled, Ordering::SeqCst);
+        let Some(hwnd) = hwnd_of(window) else {
+            return;
+        };
+        if enabled {
+            clear_noactivate_style(hwnd);
+            unsafe {
+                EnumChildWindows(hwnd, Some(enum_activate), 0);
+            }
+            let _ = window.set_focusable(true);
+            let _ = window.set_focus();
+        } else {
+            set_noactivate_style(hwnd);
+            subclass_noactivate(hwnd);
+            unsafe {
+                EnumChildWindows(hwnd, Some(enum_noactivate), 0);
+            }
+            let _ = window.set_focusable(false);
         }
     }
 
@@ -797,7 +844,13 @@ mod imp {
         };
         unsafe {
             let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
-            SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_TOPMOST | WS_EX_NOACTIVATE);
+            let mut next = ex | WS_EX_TOPMOST;
+            if INPUT_ENABLED.load(Ordering::SeqCst) {
+                next &= !WS_EX_NOACTIVATE;
+            } else {
+                next |= WS_EX_NOACTIVATE;
+            }
+            SetWindowLongW(hwnd, GWL_EXSTYLE, next);
             SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -853,6 +906,8 @@ mod imp {
     pub fn apply_overlay_style(_window: &WebviewWindow) {}
 
     pub fn prevent_activation(_window: &WebviewWindow) {}
+
+    pub fn set_input_enabled(_window: &WebviewWindow, _enabled: bool) {}
 
     pub fn is_titlebar_shaded() -> bool {
         false

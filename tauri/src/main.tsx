@@ -4,9 +4,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import Overlay from "./Overlay";
 import Preview from "./Preview";
+import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { applyCssVars } from "./constants";
 import { isTauri } from "./env";
 import { applyNativeWindowSize } from "./windowSize";
+import "overlayscrollbars/overlayscrollbars.css";
 import "./index.css";
 
 applyCssVars();
@@ -21,6 +23,8 @@ if (isTauri()) {
   if (overlay) {
     document.documentElement.classList.add("bg-transparent");
     document.body.classList.add("bg-transparent");
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
   }
   page = overlay ? <Overlay /> : <App />;
 } else {
@@ -35,5 +39,8 @@ if (isTauri()) {
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>{page}</React.StrictMode>,
+  <React.StrictMode>
+    {page}
+    {import.meta.env.DEV && <TauriClickToComponent />}
+  </React.StrictMode>,
 );

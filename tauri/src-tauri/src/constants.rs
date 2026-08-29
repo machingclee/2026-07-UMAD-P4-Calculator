@@ -5,8 +5,8 @@ pub const DEBUG: bool = false;
 
 pub const APP_WIDTH: f64 = 420.0; // main window width
 pub const APP_HEIGHT: f64 = 220.0; // main window height
-pub const OVERLAY_WIDTH: f64 = 400.0; // overlay window width
-pub const OVERLAY_HEIGHT: f64 = 320.0; // overlay window height
+pub const OVERLAY_WIDTH: f64 = 400.0; // initial overlay window width (then hugs content)
+pub const OVERLAY_HEIGHT: f64 = 320.0; // initial overlay window height (then hugs content)
 pub const OVERLAY_X: f64 = 865.0; // initial screen X position
 pub const OVERLAY_Y: f64 = 345.0; // initial screen Y position
 pub const OVERLAY_HINT: &str = "金反，紫同";

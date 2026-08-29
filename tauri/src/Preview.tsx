@@ -1,6 +1,6 @@
 import App from "./App";
 import Overlay from "./Overlay";
-import { APP_HEIGHT, APP_WIDTH, OVERLAY_HEIGHT, OVERLAY_WIDTH } from "./constants";
+import { APP_HEIGHT, APP_WIDTH } from "./constants";
 
 export default function Preview() {
   return (
@@ -15,12 +15,9 @@ export default function Preview() {
         </div>
       </div>
       <div className="flex flex-col gap-2">
-        <div className="text-xs leading-tight text-[#bbb]">
-          Overlay — {OVERLAY_WIDTH}×{OVERLAY_HEIGHT}
-        </div>
+        <div className="text-xs leading-tight text-[#bbb]">Overlay (hugs content)</div>
         <div
-          className="overflow-hidden bg-[#2b2b2b] shadow-[0_8px_24px_rgba(0,0,0,0.4)] [background-image:linear-gradient(45deg,#3a3a3a_25%,transparent_25%),linear-gradient(-45deg,#3a3a3a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#3a3a3a_75%),linear-gradient(-45deg,transparent_75%,#3a3a3a_75%)] [background-position:0_0,0_8px,8px_-8px,-8px_0] [background-size:16px_16px]"
-          style={{ width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT }}
+          className="w-fit min-h-[2rem] min-w-[8rem] overflow-hidden bg-[#2b2b2b] shadow-[0_8px_24px_rgba(0,0,0,0.4)] [background-image:linear-gradient(45deg,#3a3a3a_25%,transparent_25%),linear-gradient(-45deg,#3a3a3a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#3a3a3a_75%),linear-gradient(-45deg,transparent_75%,#3a3a3a_75%)] [background-position:0_0,0_8px,8px_-8px,-8px_0] [background-size:16px_16px]"
         >
           <Overlay />
         </div>

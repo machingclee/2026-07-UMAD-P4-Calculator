@@ -1,7 +1,35 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+
+const LABEL_KEYS: &[&str] = &[
+    "overlayHint",
+    "r1",
+    "r2",
+    "stay",
+    "move",
+    "lookAway",
+    "lookAt",
+    "thunderOut",
+    "thunderShare",
+    "waterOut",
+    "waterShare",
+    "steel",
+    "moon",
+    "stepBoth",
+    "stepThunder",
+    "stepIce",
+    "stepNone",
+];
+
+pub fn sanitize_labels(input: HashMap<String, String>) -> HashMap<String, String> {
+    input
+        .into_iter()
+        .filter(|(k, _)| LABEL_KEYS.contains(&k.as_str()))
+        .collect()
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -23,6 +51,9 @@ pub struct Config {
     /// `"top"`: title chip stays on the top edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shade_edge: Option<String>,
+    /// Sparse overrides for UI / overlay strings. Missing keys use built-in defaults.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub labels: HashMap<String, String>,
 }
 
 fn exe_dir_config() -> PathBuf {

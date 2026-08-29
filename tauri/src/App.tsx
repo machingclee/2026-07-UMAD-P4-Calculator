@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -40,6 +41,16 @@ import {
   WATER_COLOR_DARK,
   applyThemeColors,
 } from "./constants";
+import {
+  DEFAULT_LABELS,
+  LABEL_GROUPS,
+  Labels,
+  LabelKey,
+  loadLabelsLocal,
+  mergeLabels,
+  persistLabelsLocal,
+  sparseLabels,
+} from "./labels";
 import {
   EMPTY_STATE,
   State,
@@ -379,11 +390,69 @@ function RoundBlock({
   );
 }
 
+function LabelsEditor({
+  labels,
+  onChange,
+  onReset,
+}: {
+  labels: Labels;
+  onChange: (key: LabelKey, value: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      {LABEL_GROUPS.map((group) => (
+        <div key={group.title}>
+          <div className="mb-1 font-bold">{group.title}</div>
+          <p className="mb-1 text-[11px] leading-snug text-[#555] dark:text-[#aaa]">
+            留空會刪除該行。若要空行，請輸入 \n
+          </p>
+          <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+            <tbody>
+              {group.keys.map((key) => (
+                <tr key={key} className="border-b border-[#c0c0c0] dark:border-[#444]">
+                  <td className="w-[7.5em] whitespace-nowrap py-1 pr-2 align-middle text-[#555] dark:text-[#aaa]">
+                    {DEFAULT_LABELS[key]}
+                  </td>
+                  <td className="py-1">
+                    <input
+                      type="text"
+                      value={labels[key]}
+                      placeholder={DEFAULT_LABELS[key]}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="box-border w-full min-w-0 rounded-sm border border-[#adadad] bg-[var(--btn-bg)] px-1.5 py-0.5 font-[inherit] text-[length:var(--font-size)] text-black outline-none select-text focus:border-[#0078d7] dark:border-[#555] dark:text-white"
+                      onChange={(e) => onChange(key, e.target.value)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div>
+        <button
+          type="button"
+          className={actionBtnClass(false)}
+          tabIndex={-1}
+          onClick={onReset}
+        >
+          重設
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [state, setState] = useState<State>(EMPTY_STATE);
   const [changeMode, setChangeMode] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"general" | "custom">("general");
   const [theme, setTheme] = useState<Theme | null>(null);
   const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
+  const [labels, setLabels] = useState<Labels>({ ...DEFAULT_LABELS });
+  const [labelsReady, setLabelsReady] = useState(false);
 
   const setField = useCallback((key: string, value: string) => {
     setState((prev) => ({ ...prev, [key]: value }));
@@ -400,10 +469,18 @@ function App() {
       invoke<string>("get_shade_edge")
         .then((value) => setShadeEdge(parseShadeEdge(value)))
         .catch(() => setShadeEdge("bottom"));
+      invoke<Partial<Record<string, string>>>("get_labels")
+        .then((value) => {
+          setLabels(mergeLabels(value));
+          setLabelsReady(true);
+        })
+        .catch(() => setLabelsReady(true));
       return;
     }
     setTheme(loadThemeLocal());
     setShadeEdge(loadShadeEdgeLocal());
+    setLabels(loadLabelsLocal());
+    setLabelsReady(true);
   }, []);
 
   useEffect(() => {
@@ -430,12 +507,24 @@ function App() {
   }, [shadeEdge]);
 
   useEffect(() => {
+    if (!labelsReady) return;
+    const merged = mergeLabels(labels);
     if (isTauri()) {
-      invoke("calculate_text", { state }).catch(() => { });
+      invoke("set_labels", { labels: sparseLabels(merged) }).catch(() => { });
       return;
     }
-    publishOverlayText(overlayText(state));
-  }, [state]);
+    persistLabelsLocal(merged);
+  }, [labels, labelsReady]);
+
+  useEffect(() => {
+    if (!labelsReady) return;
+    const merged = mergeLabels(labels);
+    if (isTauri()) {
+      invoke("calculate_text", { state, labels: sparseLabels(merged) }).catch(() => { });
+      return;
+    }
+    publishOverlayText(overlayText(state, merged));
+  }, [state, labels, labelsReady]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -447,13 +536,19 @@ function App() {
 
   useEffect(() => {
     if (!isTauri()) return;
+    invoke("set_input_mode", { enabled: changeMode }).catch(() => { });
+  }, [changeMode]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
     const block = (e: KeyboardEvent) => {
+      if (changeMode) return;
       e.preventDefault();
       e.stopPropagation();
     };
     window.addEventListener("keydown", block, true);
     return () => window.removeEventListener("keydown", block, true);
-  }, []);
+  }, [changeMode]);
 
   const changeButton = (
     <button
@@ -472,73 +567,120 @@ function App() {
     return (
       <main className="h-full w-full select-none overflow-hidden bg-[var(--app-bg)] text-black dark:text-[#e8e8e8]">
         <div className="flex h-full flex-col p-2">
-          <div className="min-h-0 flex-1 overflow-auto p-1">
-            <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
-              <thead>
-                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                  <th className="py-1 pr-3 font-bold">選項</th>
-                  <th className="py-1 font-bold">設定</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                  <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
-                  <td className="py-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        className={actionBtnClass(theme !== "dark")}
-                        tabIndex={-1}
-                        aria-pressed={theme !== "dark"}
-                        onClick={() => setTheme("light")}
-                      >
-                        淺色
-                      </button>
-                      <button
-                        type="button"
-                        className={actionBtnClass(theme === "dark")}
-                        tabIndex={-1}
-                        aria-pressed={theme === "dark"}
-                        onClick={() => setTheme("dark")}
-                      >
-                        深色
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                  <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
-                  <td className="py-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        className={actionBtnClass(edge === "top")}
-                        tabIndex={-1}
-                        aria-pressed={edge === "top"}
-                        onClick={() => setShadeEdge("top")}
-                      >
-                        向上
-                      </button>
-                      <button
-                        type="button"
-                        className={actionBtnClass(edge === "bottom")}
-                        tabIndex={-1}
-                        aria-pressed={edge === "bottom"}
-                        onClick={() => setShadeEdge("bottom")}
-                      >
-                        向下
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
-                  <td className="py-1.5 text-[#555] dark:text-[#aaa]">
-                    可拖曳調整位置
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="mb-1 flex flex-wrap gap-1 p-1">
+            <button
+              type="button"
+              className={actionBtnClass(settingsTab === "general")}
+              tabIndex={-1}
+              aria-pressed={settingsTab === "general"}
+              onClick={() => setSettingsTab("general")}
+            >
+              一般
+            </button>
+            <button
+              type="button"
+              className={actionBtnClass(settingsTab === "custom")}
+              tabIndex={-1}
+              aria-pressed={settingsTab === "custom"}
+              onClick={() => setSettingsTab("custom")}
+            >
+              自定義
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {settingsTab === "custom" ? (
+              <OverlayScrollbarsComponent
+                defer
+                className="h-full"
+                options={{
+                  overflow: { x: "hidden" },
+                  scrollbars: {
+                    theme: theme === "dark" ? "os-theme-light" : "os-theme-dark",
+                    autoHide: "leave",
+                    autoHideDelay: 600,
+                  },
+                }}
+              >
+                <div className="p-1">
+                  <LabelsEditor
+                    labels={labels}
+                    onChange={(key, value) =>
+                      setLabels((prev) => ({ ...prev, [key]: value }))
+                    }
+                    onReset={() => setLabels({ ...DEFAULT_LABELS })}
+                  />
+                </div>
+              </OverlayScrollbarsComponent>
+            ) : (
+              <div className="h-full overflow-auto p-1">
+              <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+                <thead>
+                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                    <th className="py-1 pr-3 font-bold">選項</th>
+                    <th className="py-1 font-bold">設定</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                    <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
+                    <td className="py-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className={actionBtnClass(theme !== "dark")}
+                          tabIndex={-1}
+                          aria-pressed={theme !== "dark"}
+                          onClick={() => setTheme("light")}
+                        >
+                          淺色
+                        </button>
+                        <button
+                          type="button"
+                          className={actionBtnClass(theme === "dark")}
+                          tabIndex={-1}
+                          aria-pressed={theme === "dark"}
+                          onClick={() => setTheme("dark")}
+                        >
+                          深色
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                    <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
+                    <td className="py-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className={actionBtnClass(edge === "top")}
+                          tabIndex={-1}
+                          aria-pressed={edge === "top"}
+                          onClick={() => setShadeEdge("top")}
+                        >
+                          向上
+                        </button>
+                        <button
+                          type="button"
+                          className={actionBtnClass(edge === "bottom")}
+                          tabIndex={-1}
+                          aria-pressed={edge === "bottom"}
+                          onClick={() => setShadeEdge("bottom")}
+                        >
+                          向下
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
+                    <td className="py-1.5 text-[#555] dark:text-[#aaa]">
+                      可拖曳調整位置
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              </div>
+            )}
           </div>
           <div className="mt-auto flex flex-wrap items-center gap-1.5 p-1">
             {changeButton}

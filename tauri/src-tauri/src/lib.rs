@@ -8,22 +8,45 @@ use constants::{
     APP_HEIGHT, APP_WIDTH, DEBUG, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X,
     OVERLAY_Y,
 };
+use std::collections::HashMap;
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
+
+fn overlay_hint(labels: &HashMap<String, String>) -> String {
+    match labels.get("overlayHint") {
+        Some(value) => value.clone(),
+        None => OVERLAY_HINT.to_string(),
+    }
+}
 
 #[tauri::command]
-fn calculate_text(app: tauri::AppHandle, state: State) -> String {
+fn calculate_text(
+    app: tauri::AppHandle,
+    state: State,
+    labels: Option<HashMap<String, String>>,
+) -> String {
+    let labels = match labels {
+        Some(map) => config::sanitize_labels(map),
+        None => config::load(&app).labels,
+    };
     let started = state.values().any(|v| !v.is_empty());
     let text = if !started {
         String::new()
     } else {
-        let body = calculate::calculate(&state);
-        if body.is_empty() {
-            OVERLAY_HINT.to_string()
+        let body = calculate::calculate_labeled(&state, &labels);
+        let hint_raw = overlay_hint(&labels);
+        if hint_raw.is_empty() {
+            body
         } else {
-            format!("{OVERLAY_HINT}\n\n{body}")
+            let hint = hint_raw.replace("\\n", "\n");
+            if body.is_empty() {
+                hint
+            } else {
+                format!("{hint}\n{body}")
+            }
         }
     };
     let _ = app.emit("overlay-text", &text);
@@ -68,6 +91,39 @@ fn set_shade_edge(app: tauri::AppHandle, edge: String) {
     win32::set_shade_from_bottom(edge == "bottom");
 }
 
+#[tauri::command]
+fn get_labels(app: tauri::AppHandle) -> HashMap<String, String> {
+    config::load(&app).labels
+}
+
+#[tauri::command]
+fn set_labels(app: tauri::AppHandle, labels: HashMap<String, String>) {
+    config::update(&app, |c| c.labels = config::sanitize_labels(labels));
+}
+
+#[tauri::command]
+fn set_input_mode(app: tauri::AppHandle, enabled: bool) {
+    if let Some(main) = app.get_webview_window("main") {
+        win32::set_input_enabled(&main, enabled);
+    }
+}
+
+/// Open a file in VS Code via the vscode:// URL scheme.
+/// Used by TauriClickToComponent in dev mode — WKWebView can't navigate
+/// vscode:// URLs directly, so the frontend invokes this command instead.
+#[tauri::command]
+async fn open_in_vscode(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let path = path.replace('\\', "/");
+    let url = if path.starts_with('/') {
+        format!("vscode://file{}", path)
+    } else {
+        format!("vscode://file/{}", path)
+    };
+    app.opener()
+        .open_url(&url, None::<String>)
+        .map_err(|e| e.to_string())
+}
+
 fn persist_moved(app: &tauri::AppHandle, label: &str, x: i32, y: i32) {
     if label == "main" {
         if win32::is_titlebar_shaded() {
@@ -102,7 +158,11 @@ pub fn run() {
             get_theme,
             set_theme,
             get_shade_edge,
-            set_shade_edge
+            set_shade_edge,
+            get_labels,
+            set_labels,
+            set_input_mode,
+            open_in_vscode,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Moved(pos) => {

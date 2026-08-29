@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -9,16 +9,12 @@ import {
   OVERLAY_FONT_FAMILY,
   OVERLAY_FONT_SIZE_PT,
   OVERLAY_FONT_WEIGHT,
-  OVERLAY_HEIGHT,
-  OVERLAY_WIDTH,
   STROKE_COLOR,
   STROKE_RADIUS,
   STROKE_STEP_DEG,
-  TEXT_X,
-  TEXT_Y,
 } from "./constants";
 import { OVERLAY_DRAG_EVENT, OVERLAY_TEXT_EVENT, isTauri } from "./env";
-import { applyNativeWindowSize } from "./windowSize";
+import { fitOverlayToElement } from "./windowSize";
 
 function strokeShadow(): string {
   const parts: string[] = [];
@@ -32,10 +28,17 @@ function strokeShadow(): string {
 }
 
 export default function Overlay() {
+  const boxRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [dragEnabled, setDragEnabled] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const shadow = useMemo(strokeShadow, []);
+
+  const display = DEBUG && pos
+    ? text
+      ? `${text}\n\nOVL_X=${pos.x} OVL_Y=${pos.y}`
+      : `OVL_X=${pos.x} OVL_Y=${pos.y}`
+    : text;
 
   useEffect(() => {
     if (isTauri()) {
@@ -53,9 +56,17 @@ export default function Overlay() {
     return () => window.removeEventListener(OVERLAY_TEXT_EVENT, onText);
   }, []);
 
-  useEffect(() => {
-    void applyNativeWindowSize();
-  }, [OVERLAY_WIDTH, OVERLAY_HEIGHT]);
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const apply = () => {
+      void fitOverlayToElement(el);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [display, dragEnabled]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -103,34 +114,30 @@ export default function Overlay() {
     };
   }, []);
 
-  const display = DEBUG && pos
-    ? text
-      ? `${text}\n\nOVL_X=${pos.x} OVL_Y=${pos.y}`
-      : `OVL_X=${pos.x} OVL_Y=${pos.y}`
-    : text;
+  const strokePad = STROKE_RADIUS + 1;
 
   return (
     <div
-      className="relative m-0 h-full w-full cursor-default overflow-hidden select-none"
+      ref={boxRef}
+      className="m-0 w-max max-w-none overflow-hidden cursor-default select-none"
       style={{ background: BG_COLOR }}
     >
       {display || dragEnabled ? (
         <div
-          className={`absolute -translate-x-1/2 -translate-y-1/2 whitespace-pre text-left leading-[1.35] ${
+          className={`box-border whitespace-pre text-left leading-[1.35] ${
             dragEnabled
-              ? "box-border min-h-[1.4em] min-w-[4em] cursor-move rounded px-3.5 py-2.5"
+              ? "min-h-[1.4em] min-w-[4em] cursor-move rounded px-3.5 py-2.5"
               : ""
           }`}
           {...(dragEnabled ? { "data-tauri-drag-region": true } : {})}
           style={{
-            left: TEXT_X,
-            top: TEXT_Y,
             fontFamily: OVERLAY_FONT_FAMILY,
             fontSize: `${OVERLAY_FONT_SIZE_PT}pt`,
             fontWeight: OVERLAY_FONT_WEIGHT,
             color: FILL_COLOR,
             textShadow: shadow,
             background: dragEnabled ? DRAG_BG : undefined,
+            padding: dragEnabled ? undefined : strokePad,
           }}
         >
           {display}

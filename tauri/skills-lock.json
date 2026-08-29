@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "skills": {
+    "tauri--click-to-component": {
+      "source": "machingclee/my-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "tauri--click-to-component/SKILL.md",
+      "computedHash": "0cfd77a7da8715b96c83c7e2d2a6fe2cac4e15c3e236a0a44dab7b7e88b8d205"
+    }
+  }
+}

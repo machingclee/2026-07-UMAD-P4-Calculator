@@ -7,12 +7,7 @@ export const DEBUG = false; // show overlay X/Y in the main window title when dr
 
 export const APP_WIDTH = 360; // main window width
 export const APP_HEIGHT = 250; // main window height
-export const OVERLAY_WIDTH = 400; // overlay window width
-export const OVERLAY_HEIGHT = 320; // overlay window height
-export const OVERLAY_X = 865; // initial screen X position
-export const OVERLAY_Y = 345; // initial screen Y position
-export const TEXT_X = 200; // text X anchor within overlay (center)
-export const TEXT_Y = 160; // text Y anchor within overlay (center)
+// Overlay hugs its text. Native first-frame size/position: src-tauri/src/constants.rs.
 
 export const FONT_FAMILY =
   '"Microsoft JhengHei UI", "Microsoft JhengHei", "微軟正黑體", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang TC", "Noto Sans TC", sans-serif';
