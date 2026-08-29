@@ -28,6 +28,8 @@ function waterThunderWord(text: string, isOut: boolean): string {
 /** Same as python/main.py `_actions`. */
 function actions(selections: State, prefix: string, labels: Labels): string[] {
   const out: string[] = [];
+  let hasShare = false;
+  const share = waterThunderWord(labels.share, false);
   for (const rnd of ["round1", "round2"] as const) {
     const tf = get(selections, `${rnd}_tf`);
     if (!tf) continue;
@@ -37,21 +39,37 @@ function actions(selections: State, prefix: string, labels: Labels): string[] {
     const thu = get(selections, `${rnd}_thunder`);
     if (spd.includes(prefix)) out.push(isTrue ? labels.stay : labels.move);
     if (wat.includes(prefix)) {
-      out.push(
-        isTrue
-          ? waterThunderWord(labels.waterShare, false)
-          : waterThunderWord(labels.waterOut, true),
-      );
+      if (isTrue) {
+        if (!hasShare) {
+          out.push(share);
+          hasShare = true;
+        }
+      } else {
+        const word = waterThunderWord(labels.waterOut, true);
+        if (word) out.push(word);
+      }
     }
     if (thu.includes(prefix)) {
-      out.push(
-        isTrue
-          ? waterThunderWord(labels.thunderOut, true)
-          : waterThunderWord(labels.thunderShare, false),
-      );
+      if (isTrue) {
+        const word = waterThunderWord(labels.thunderOut, true);
+        if (word) out.push(word);
+      } else if (!hasShare) {
+        out.push(share);
+        hasShare = true;
+      }
     }
   }
   return out.filter((s) => s !== "");
+}
+
+function withShareIfNoOut(acts: string[], labels: Labels): string[] {
+  const share = waterThunderWord(labels.share, false);
+  const waterOut = waterThunderWord(labels.waterOut, true);
+  const thunderOut = waterThunderWord(labels.thunderOut, true);
+  const hasOut = acts.some((a) => a === waterOut || a === thunderOut);
+  const hasShare = share !== "" && acts.includes(share);
+  if (!hasOut && !hasShare && share) return [...acts, share];
+  return acts;
 }
 
 function r2StepHint(state: State, labels: Labels): string {
@@ -72,8 +90,9 @@ export function calculate(state: State, labels: Labels = DEFAULT_LABELS): string
   ] as const) {
     const tf = get(state, `${rnd}_tf`);
     const eye = tf === "真" ? labels.lookAway : tf ? labels.lookAt : "";
-    const acts = actions(state, prefix, labels);
+    let acts = actions(state, prefix, labels);
     if (!tf && acts.length === 0) continue;
+    acts = withShareIfNoOut(acts, labels);
     const block: string[] = [];
     pushLabel(block, rnd === "round1" ? labels.r1 : labels.r2);
     if (acts.length) pushLabel(block, acts.join("  "), "  ");

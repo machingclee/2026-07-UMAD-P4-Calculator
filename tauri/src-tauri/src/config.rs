@@ -12,10 +12,9 @@ const LABEL_KEYS: &[&str] = &[
     "move",
     "lookAway",
     "lookAt",
-    "thunderOut",
-    "thunderShare",
     "waterOut",
-    "waterShare",
+    "thunderOut",
+    "share",
     "steel",
     "moon",
     "stepBoth",
@@ -25,10 +24,27 @@ const LABEL_KEYS: &[&str] = &[
 ];
 
 pub fn sanitize_labels(input: HashMap<String, String>) -> HashMap<String, String> {
-    input
-        .into_iter()
-        .filter(|(k, _)| LABEL_KEYS.contains(&k.as_str()))
-        .collect()
+    let mut out = HashMap::new();
+    let mut share: Option<String> = None;
+    let mut share_legacy: Option<String> = None;
+    for (key, value) in input {
+        match key.as_str() {
+            "share" => share = Some(value),
+            "waterShare" | "thunderShare" => {
+                if share_legacy.is_none() {
+                    share_legacy = Some(value);
+                }
+            }
+            k if LABEL_KEYS.contains(&k) => {
+                out.insert(key, value);
+            }
+            _ => {}
+        }
+    }
+    if let Some(value) = share.or(share_legacy) {
+        out.insert("share".into(), value);
+    }
+    out
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

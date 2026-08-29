@@ -8,10 +8,9 @@ export const DEFAULT_LABELS = {
   move: "要動",
   lookAway: "背眼",
   lookAt: "望眼",
-  thunderOut: "雷出",
-  thunderShare: "雷分攤",
   waterOut: "水出",
-  waterShare: "水分攤",
+  thunderOut: "雷出",
+  share: "分攤",
   steel: "放鋼鐵",
   moon: "放月環",
   stepBoth: "都踩",
@@ -36,10 +35,9 @@ export const LABEL_GROUPS: { title: string; keys: LabelKey[] }[] = [
       "move",
       "lookAway",
       "lookAt",
-      "thunderOut",
-      "thunderShare",
       "waterOut",
-      "waterShare",
+      "thunderOut",
+      "share",
       "steel",
       "moon",
       "stepBoth",
@@ -58,6 +56,10 @@ export function mergeLabels(
   for (const key of LABEL_KEYS) {
     const value = partial[key];
     if (typeof value === "string") out[key] = value;
+  }
+  if (typeof partial.share !== "string") {
+    const legacy = partial.waterShare ?? partial.thunderShare;
+    if (typeof legacy === "string") out.share = legacy;
   }
   return out;
 }
