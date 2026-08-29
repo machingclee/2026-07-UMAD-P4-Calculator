@@ -31,6 +31,17 @@ fn actions(selections: &State, prefix: &str) -> Vec<&'static str> {
     out
 }
 
+fn r2_step_hint(state: &State) -> &'static str {
+    let is_thunder_faked = !get(state, "thunder").is_empty();
+    let is_ice_faked = !get(state, "ice").is_empty();
+    match (is_thunder_faked, is_ice_faked) {
+        (true, true) => "都踩",
+        (true, false) => "踩雷",
+        (false, true) => "踩冰",
+        (false, false) => "都不踩",
+    }
+}
+
 /// Same as python/main.py `calculate`.
 pub fn calculate(state: &State) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -67,10 +78,8 @@ pub fn calculate(state: &State) -> String {
         } else {
             let w_val = get(state, "water");
             if !w_val.is_empty() {
-                lines.push(format!(
-                    "  {}",
-                    if w_val == "真" { "放月環" } else { "放鋼鐵" }
-                ));
+                let place = if w_val == "真" { "放月環" } else { "放鋼鐵" };
+                lines.push(format!("  {place} {}", r2_step_hint(state)));
             }
         }
     }
@@ -144,7 +153,7 @@ mod tests {
     fn r2_true_water_true() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "真"), ("water", "真")])),
-            "R2\n  背眼\n  放月環"
+            "R2\n  背眼\n  放月環 都不踩"
         );
     }
 
@@ -152,7 +161,36 @@ mod tests {
     fn r2_false_water_fake() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "？"), ("water", "？")])),
-            "R2\n  望眼\n  放鋼鐵"
+            "R2\n  望眼\n  放鋼鐵 都不踩"
+        );
+    }
+
+    #[test]
+    fn r2_step_ice_only() {
+        assert_eq!(
+            calculate(&s(&[("round2_tf", "真"), ("water", "真"), ("ice", "？")])),
+            "R2\n  背眼\n  放月環 踩冰"
+        );
+    }
+
+    #[test]
+    fn r2_step_thunder_only() {
+        assert_eq!(
+            calculate(&s(&[("round2_tf", "真"), ("water", "真"), ("thunder", "？")])),
+            "R2\n  背眼\n  放月環 踩雷"
+        );
+    }
+
+    #[test]
+    fn r2_step_both() {
+        assert_eq!(
+            calculate(&s(&[
+                ("round2_tf", "真"),
+                ("water", "真"),
+                ("thunder", "？"),
+                ("ice", "？"),
+            ])),
+            "R2\n  背眼\n  放月環 都踩"
         );
     }
 
@@ -181,7 +219,7 @@ mod tests {
         ]));
         assert_eq!(
             text,
-            "R1 不動\n  背眼\n  放鋼鐵\n\nR2 水出\n  望眼\n  放月環"
+            "R1 不動\n  背眼\n  放鋼鐵\n\nR2 水出\n  望眼\n  放月環 都不踩"
         );
     }
 

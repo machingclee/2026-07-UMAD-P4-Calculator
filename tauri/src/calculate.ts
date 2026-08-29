@@ -22,6 +22,15 @@ function actions(selections: State, prefix: string): string[] {
   return out;
 }
 
+function r2StepHint(state: State): string {
+  const isThunderFaked = Boolean(get(state, "thunder"));
+  const isIceFaked = Boolean(get(state, "ice"));
+  if (isThunderFaked && isIceFaked) return "都踩";
+  if (isThunderFaked) return "踩雷";
+  if (isIceFaked) return "踩冰";
+  return "都不踩";
+}
+
 /** Same as python/main.py `calculate`. */
 export function calculate(state: State): string {
   const lines: string[] = [];
@@ -43,7 +52,10 @@ export function calculate(state: State): string {
       if (fVal) lines.push(`  ${fVal === "真" ? "放鋼鐵" : "放月環"}`);
     } else {
       const wVal = get(state, "water");
-      if (wVal) lines.push(`  ${wVal === "真" ? "放月環" : "放鋼鐵"}`);
+      if (wVal) {
+        const place = wVal === "真" ? "放月環" : "放鋼鐵";
+        lines.push(`  ${place} ${r2StepHint(state)}`);
+      }
     }
   }
   return lines.join("\n");
