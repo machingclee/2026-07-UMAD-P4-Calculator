@@ -22,6 +22,8 @@
         "minimizable": true,
         "alwaysOnTop": true,
         "visible": false,
+        "focus": false,
+        "focusable": false,
         "center": true
       }
     ],

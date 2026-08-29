@@ -8,14 +8,10 @@ use constants::{
     APP_HEIGHT, APP_WIDTH, DEBUG, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X,
     OVERLAY_Y,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
-    WebviewWindowBuilder, WindowEvent,
+    Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
-
-/// Ignore the create-time Resized event so it does not overwrite a saved size.
-static PERSIST_SIZE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 fn calculate_text(app: tauri::AppHandle, state: State) -> String {
@@ -52,22 +48,31 @@ fn set_theme(app: tauri::AppHandle, theme: String) {
     config::update(&app, |c| c.theme = Some(theme.into()));
 }
 
-fn persist_resized(app: &tauri::AppHandle, label: &str, size: PhysicalSize<u32>, scale: f64) {
-    if !PERSIST_SIZE.load(Ordering::SeqCst) || label != "main" || scale <= 0.0 {
-        return;
+fn parse_shade_edge(value: Option<&str>) -> &'static str {
+    if value == Some("top") {
+        "top"
+    } else {
+        "bottom"
     }
-    let width = (size.width as f64 / scale).round() as i32;
-    let height = (size.height as f64 / scale).round() as i32;
-    if width > 0 && height > 0 {
-        config::update(app, |c| {
-            c.app_width = Some(width);
-            c.app_height = Some(height);
-        });
-    }
+}
+
+#[tauri::command]
+fn get_shade_edge(app: tauri::AppHandle) -> String {
+    parse_shade_edge(config::load(&app).shade_edge.as_deref()).into()
+}
+
+#[tauri::command]
+fn set_shade_edge(app: tauri::AppHandle, edge: String) {
+    let edge = parse_shade_edge(Some(edge.as_str()));
+    config::update(&app, |c| c.shade_edge = Some(edge.into()));
+    win32::set_shade_from_bottom(edge == "bottom");
 }
 
 fn persist_moved(app: &tauri::AppHandle, label: &str, x: i32, y: i32) {
     if label == "main" {
+        if win32::is_titlebar_shaded() {
+            return;
+        }
         if x > 0 && y > 0 {
             config::update(app, |c| {
                 c.app_x = Some(x);
@@ -92,16 +97,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![calculate_text, get_theme, set_theme])
+        .invoke_handler(tauri::generate_handler![
+            calculate_text,
+            get_theme,
+            set_theme,
+            get_shade_edge,
+            set_shade_edge
+        ])
         .on_window_event(|window, event| match event {
-            WindowEvent::Resized(size) => {
-                persist_resized(
-                    window.app_handle(),
-                    window.label(),
-                    *size,
-                    window.scale_factor().unwrap_or(1.0),
-                );
-            }
             WindowEvent::Moved(pos) => {
                 persist_moved(window.app_handle(), window.label(), pos.x, pos.y);
                 if DEBUG && window.label() == "overlay" {
@@ -127,16 +130,8 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
 
-            #[cfg(debug_assertions)]
-            {
-                let _ = main.set_size(LogicalSize::new(APP_WIDTH, APP_HEIGHT));
-            }
-            #[cfg(not(debug_assertions))]
-            if let (Some(width), Some(height)) = (cfg.app_width, cfg.app_height) {
-                if width > 0 && height > 0 {
-                    let _ = main.set_size(LogicalSize::new(width as f64, height as f64));
-                }
-            }
+            let _ = main.set_size(LogicalSize::new(APP_WIDTH, APP_HEIGHT));
+            let _ = main.set_resizable(false);
             let _ = main.set_theme(Some(if cfg.theme.as_deref() == Some("dark") {
                 tauri::Theme::Dark
             } else {
@@ -146,8 +141,12 @@ pub fn run() {
             if let (Some(x), Some(y)) = (cfg.app_x, cfg.app_y) {
                 let _ = main.set_position(PhysicalPosition::new(x, y));
             }
+            let _ = main.set_focusable(false);
+            win32::set_shade_from_bottom(parse_shade_edge(cfg.shade_edge.as_deref()) == "bottom");
+            win32::force_topmost_window(&main);
+            win32::prevent_activation(&main);
+            win32::enable_titlebar_shade(&main);
             let _ = main.show();
-            PERSIST_SIZE.store(true, Ordering::SeqCst);
 
             let ovl_x = cfg.overlay_x.unwrap_or(OVERLAY_X as i32);
             let ovl_y = cfg.overlay_y.unwrap_or(OVERLAY_Y as i32);
@@ -167,6 +166,7 @@ pub fn run() {
             .resizable(false)
             .skip_taskbar(true)
             .focused(false)
+            .focusable(false)
             .visible(true)
             .build()?;
             let _ = overlay.set_position(PhysicalPosition::new(ovl_x, ovl_y));
@@ -178,9 +178,24 @@ pub fn run() {
             let main_hwnd = main.clone();
             let overlay_hwnd = overlay.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                win32::force_topmost_window(&main_hwnd);
-                win32::apply_overlay_style(&overlay_hwnd);
+                // WebView2 child HWNDs appear after the host window; retry so they
+                // also get WS_EX_NOACTIVATE + WM_MOUSEACTIVATE subclassing.
+                for delay_ms in [100u64, 400, 1200] {
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    let main_for_thread = main_hwnd.clone();
+                    let main_w = main_hwnd.clone();
+                    let overlay_for_thread = overlay_hwnd.clone();
+                    let overlay_w = overlay_hwnd.clone();
+                    let _ = main_for_thread.run_on_main_thread(move || {
+                        win32::force_topmost_window(&main_w);
+                        win32::prevent_activation(&main_w);
+                        win32::enable_titlebar_shade(&main_w);
+                    });
+                    let _ = overlay_for_thread.run_on_main_thread(move || {
+                        win32::apply_overlay_style(&overlay_w);
+                        win32::prevent_activation(&overlay_w);
+                    });
+                }
             });
 
             Ok(())

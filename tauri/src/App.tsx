@@ -12,6 +12,12 @@ import {
   persistThemeLocal,
 } from "./theme";
 import {
+  ShadeEdge,
+  loadShadeEdgeLocal,
+  parseShadeEdge,
+  persistShadeEdgeLocal,
+} from "./shadeEdge";
+import {
   ACTION_BADGE_FONT_SIZE,
   ACTION_BADGE_TOP,
   ACTION_BTN_GAP,
@@ -377,6 +383,7 @@ function App() {
   const [state, setState] = useState<State>(EMPTY_STATE);
   const [changeMode, setChangeMode] = useState(false);
   const [theme, setTheme] = useState<Theme | null>(null);
+  const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
 
   const setField = useCallback((key: string, value: string) => {
     setState((prev) => ({ ...prev, [key]: value }));
@@ -390,9 +397,13 @@ function App() {
       invoke<string>("get_theme")
         .then((value) => setTheme(parseTheme(value)))
         .catch(() => setTheme("light"));
+      invoke<string>("get_shade_edge")
+        .then((value) => setShadeEdge(parseShadeEdge(value)))
+        .catch(() => setShadeEdge("bottom"));
       return;
     }
     setTheme(loadThemeLocal());
+    setShadeEdge(loadShadeEdgeLocal());
   }, []);
 
   useEffect(() => {
@@ -410,6 +421,15 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (!shadeEdge) return;
+    if (isTauri()) {
+      invoke("set_shade_edge", { edge: shadeEdge }).catch(() => { });
+      return;
+    }
+    persistShadeEdgeLocal(shadeEdge);
+  }, [shadeEdge]);
+
+  useEffect(() => {
     if (isTauri()) {
       invoke("calculate_text", { state }).catch(() => { });
       return;
@@ -420,9 +440,6 @@ function App() {
   useEffect(() => {
     if (isTauri()) {
       emit("overlay-drag", changeMode).catch(() => { });
-      getCurrentWindow()
-        .setResizable(changeMode)
-        .catch(() => { });
       return;
     }
     publishOverlayDrag(changeMode);
@@ -437,6 +454,99 @@ function App() {
     window.addEventListener("keydown", block, true);
     return () => window.removeEventListener("keydown", block, true);
   }, []);
+
+  const changeButton = (
+    <button
+      type="button"
+      className={actionBtnClass(changeMode)}
+      tabIndex={-1}
+      aria-pressed={changeMode}
+      onClick={() => setChangeMode((on) => !on)}
+    >
+      變更
+    </button>
+  );
+
+  if (changeMode) {
+    const edge = shadeEdge ?? "bottom";
+    return (
+      <main className="h-full w-full select-none overflow-hidden bg-[var(--app-bg)] text-black dark:text-[#e8e8e8]">
+        <div className="flex h-full flex-col p-2">
+          <div className="min-h-0 flex-1 overflow-auto p-1">
+            <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+              <thead>
+                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                  <th className="py-1 pr-3 font-bold">選項</th>
+                  <th className="py-1 font-bold">設定</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                  <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
+                  <td className="py-1.5">
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        className={actionBtnClass(theme !== "dark")}
+                        tabIndex={-1}
+                        aria-pressed={theme !== "dark"}
+                        onClick={() => setTheme("light")}
+                      >
+                        淺色
+                      </button>
+                      <button
+                        type="button"
+                        className={actionBtnClass(theme === "dark")}
+                        tabIndex={-1}
+                        aria-pressed={theme === "dark"}
+                        onClick={() => setTheme("dark")}
+                      >
+                        深色
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                  <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
+                  <td className="py-1.5">
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        className={actionBtnClass(edge === "top")}
+                        tabIndex={-1}
+                        aria-pressed={edge === "top"}
+                        onClick={() => setShadeEdge("top")}
+                      >
+                        向上
+                      </button>
+                      <button
+                        type="button"
+                        className={actionBtnClass(edge === "bottom")}
+                        tabIndex={-1}
+                        aria-pressed={edge === "bottom"}
+                        onClick={() => setShadeEdge("bottom")}
+                      >
+                        向下
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
+                  <td className="py-1.5 text-[#555] dark:text-[#aaa]">
+                    可拖曳調整位置
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-auto flex flex-wrap items-center gap-1.5 p-1">
+            {changeButton}
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="h-full w-full select-none overflow-hidden bg-[var(--app-bg)] text-black dark:text-[#e8e8e8]">
@@ -465,7 +575,7 @@ function App() {
             color={waterColor}
             onChange={(v) => setField("water", v)}
           />
-          <hr className="my-1 border-0 border-t border-[#c0c0c0] dark:border-[#444] mt-2 mb-3" />
+          <hr className="my-1 mt-2 mb-3 border-0 border-t border-[#c0c0c0] dark:border-[#444]" />
           <RadioGroup
             label="石化眼--雷"
             choices={["？"]}
@@ -488,26 +598,7 @@ function App() {
             >
               清除
             </button>
-            <button
-              type="button"
-              className={actionBtnClass(changeMode)}
-              tabIndex={-1}
-              aria-pressed={changeMode}
-              onClick={() => setChangeMode((on) => !on)}
-            >
-              變更
-            </button>
-            {changeMode ? (
-              <button
-                type="button"
-                className={actionBtnClass(true)}
-                tabIndex={-1}
-                aria-pressed={theme === "dark"}
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? "深色" : "淺色"}
-              </button>
-            ) : null}
+            {changeButton}
           </div>
         </section>
 

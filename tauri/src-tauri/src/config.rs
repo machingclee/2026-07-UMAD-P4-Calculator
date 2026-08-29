@@ -19,6 +19,10 @@ pub struct Config {
     pub app_height: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    /// `"bottom"` (default): title chip sits on the window's bottom edge.
+    /// `"top"`: title chip stays on the top edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade_edge: Option<String>,
 }
 
 fn exe_dir_config() -> PathBuf {
