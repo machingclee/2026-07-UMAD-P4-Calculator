@@ -1,5 +1,8 @@
 # Introduction
 
+<img width="124" height="124" alt="kefka_icon" src="https://github.com/user-attachments/assets/edc5627e-1b4a-4b47-a987-66655856a087" />
+
+
 ## Python Version
 
 A simple project to record UMAD P4-mechanics and calculate what it actually means in Chinese.
