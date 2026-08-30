@@ -43,6 +43,15 @@ fn push_label(lines: &mut Vec<String>, text: &str, indent: &str) {
     }
 }
 
+fn join_parts(parts: &[&str]) -> String {
+    parts
+        .iter()
+        .copied()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
 /// 水出/雷出 may be blank; 水分攤/雷分攤 fall back to 分攤.
 fn water_thunder_word(text: &str, is_out: bool) -> String {
     if !text.is_empty() {
@@ -54,9 +63,10 @@ fn water_thunder_word(text: &str, is_out: bool) -> String {
     }
 }
 
-/// Same as python/main.py `_actions`.
+/// Same as python/main.py `_actions`, with 分攤/水出/雷出 before 要動/不動.
 fn actions(selections: &State, prefix: &str, labels: &Labels) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut water_thunder = Vec::new();
+    let mut speed_acts = Vec::new();
     let mut has_share = false;
     let share = water_thunder_word(share_label(labels), false);
     for rnd in ["round1", "round2"] {
@@ -68,8 +78,32 @@ fn actions(selections: &State, prefix: &str, labels: &Labels) -> Vec<String> {
         let spd = get(selections, &format!("{rnd}_speed"));
         let wat = get(selections, &format!("{rnd}_water"));
         let thu = get(selections, &format!("{rnd}_thunder"));
+        if wat.contains(prefix) {
+            if is_true {
+                if !has_share {
+                    water_thunder.push(share.clone());
+                    has_share = true;
+                }
+            } else {
+                let word = water_thunder_word(label(labels, "waterOut", "水出"), true);
+                if !word.is_empty() {
+                    water_thunder.push(word);
+                }
+            }
+        }
+        if thu.contains(prefix) {
+            if is_true {
+                let word = water_thunder_word(label(labels, "thunderOut", "雷出"), true);
+                if !word.is_empty() {
+                    water_thunder.push(word);
+                }
+            } else if !has_share {
+                water_thunder.push(share.clone());
+                has_share = true;
+            }
+        }
         if spd.contains(prefix) {
-            out.push(
+            speed_acts.push(
                 if is_true {
                     label(labels, "stay", "不動")
                 } else {
@@ -78,32 +112,12 @@ fn actions(selections: &State, prefix: &str, labels: &Labels) -> Vec<String> {
                 .to_string(),
             );
         }
-        if wat.contains(prefix) {
-            if is_true {
-                if !has_share {
-                    out.push(share.clone());
-                    has_share = true;
-                }
-            } else {
-                let word = water_thunder_word(label(labels, "waterOut", "水出"), true);
-                if !word.is_empty() {
-                    out.push(word);
-                }
-            }
-        }
-        if thu.contains(prefix) {
-            if is_true {
-                let word = water_thunder_word(label(labels, "thunderOut", "雷出"), true);
-                if !word.is_empty() {
-                    out.push(word);
-                }
-            } else if !has_share {
-                out.push(share.clone());
-                has_share = true;
-            }
-        }
     }
-    out.into_iter().filter(|s| !s.is_empty()).collect()
+    water_thunder
+        .into_iter()
+        .chain(speed_acts)
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 fn with_share_if_no_out(mut acts: Vec<String>, labels: &Labels) -> Vec<String> {
@@ -116,7 +130,7 @@ fn with_share_if_no_out(mut acts: Vec<String>, labels: &Labels) -> Vec<String> {
     });
     let has_share = !share.is_empty() && acts.iter().any(|a| a == &share);
     if !has_out && !has_share && !share.is_empty() {
-        acts.push(share);
+        acts.insert(0, share);
     }
     acts
 }
@@ -153,6 +167,7 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
             continue;
         }
         acts = with_share_if_no_out(acts, labels);
+        let suffix = label(labels, "recordTf", "記錄真假");
         let mut block = Vec::new();
         let round_label = if rnd == "round1" {
             label(labels, "r1", "R1")
@@ -161,9 +176,22 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
         };
         push_label(&mut block, round_label, "");
         if !acts.is_empty() {
-            push_label(&mut block, &acts.join("  "), "  ");
+            let acts_text = acts.join("  ");
+            let line = if rnd == "round2" {
+                join_parts(&[&acts_text, suffix])
+            } else {
+                acts_text
+            };
+            push_label(&mut block, &line, "  ");
+        } else if rnd == "round2" {
+            push_label(&mut block, suffix, "  ");
         }
-        push_label(&mut block, eye, "  ");
+        let eye_line = if rnd == "round1" {
+            join_parts(&[eye, suffix])
+        } else {
+            eye.to_string()
+        };
+        push_label(&mut block, &eye_line, "  ");
         if rnd == "round1" {
             let f_val = get(state, "fire");
             if !f_val.is_empty() {
@@ -223,14 +251,17 @@ mod tests {
 
     #[test]
     fn r1_true_cross_only() {
-        assert_eq!(calculate(&s(&[("round1_tf", "真")])), "R1\n  分攤\n  背眼");
+        assert_eq!(
+            calculate(&s(&[("round1_tf", "真")])),
+            "R1\n  分攤\n  背眼  記錄真假"
+        );
     }
 
     #[test]
     fn r1_false_cross_with_fire() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "？"), ("fire", "真")])),
-            "R1\n  分攤\n  望眼\n  放鋼鐵"
+            "R1\n  分攤\n  望眼  記錄真假\n  放鋼鐵"
         );
     }
 
@@ -238,7 +269,7 @@ mod tests {
     fn r1_true_fire_fake() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "真"), ("fire", "？")])),
-            "R1\n  分攤\n  背眼\n  放月環"
+            "R1\n  分攤\n  背眼  記錄真假\n  放月環"
         );
     }
 
@@ -246,7 +277,7 @@ mod tests {
     fn r1_speed1_true() {
         assert_eq!(
             calculate(&s(&[("round1_tf", "真"), ("round1_speed", "1 ⏩")])),
-            "R1\n  不動  分攤\n  背眼"
+            "R1\n  分攤  不動\n  背眼  記錄真假"
         );
     }
 
@@ -259,7 +290,7 @@ mod tests {
                 ("round1_water", "1 💧"),
                 ("round1_thunder", "1 ⚡"),
             ])),
-            "R1\n  要動  水出  分攤\n  望眼"
+            "R1\n  水出  分攤  要動\n  望眼  記錄真假"
         );
     }
 
@@ -267,7 +298,7 @@ mod tests {
     fn r2_true_water_true() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "真"), ("water", "真")])),
-            "R2\n  分攤\n  背眼\n  放月環 都不踩"
+            "R2\n  分攤  記錄真假\n  背眼\n  放月環 都不踩"
         );
     }
 
@@ -275,7 +306,7 @@ mod tests {
     fn r2_false_water_fake() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "？"), ("water", "？")])),
-            "R2\n  分攤\n  望眼\n  放鋼鐵 都不踩"
+            "R2\n  分攤  記錄真假\n  望眼\n  放鋼鐵 都不踩"
         );
     }
 
@@ -283,7 +314,7 @@ mod tests {
     fn r2_step_ice_only() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "真"), ("water", "真"), ("ice", "？")])),
-            "R2\n  分攤\n  背眼\n  放月環 踩冰"
+            "R2\n  分攤  記錄真假\n  背眼\n  放月環 踩冰"
         );
     }
 
@@ -291,7 +322,7 @@ mod tests {
     fn r2_step_thunder_only() {
         assert_eq!(
             calculate(&s(&[("round2_tf", "真"), ("water", "真"), ("thunder", "？")])),
-            "R2\n  分攤\n  背眼\n  放月環 踩雷"
+            "R2\n  分攤  記錄真假\n  背眼\n  放月環 踩雷"
         );
     }
 
@@ -304,7 +335,7 @@ mod tests {
                 ("thunder", "？"),
                 ("ice", "？"),
             ])),
-            "R2\n  分攤\n  背眼\n  放月環 都踩"
+            "R2\n  分攤  記錄真假\n  背眼\n  放月環 都踩"
         );
     }
 
@@ -317,7 +348,7 @@ mod tests {
                 ("round2_water", "2 💧"),
                 ("round2_thunder", "2 ⚡"),
             ])),
-            "R2\n  不動  分攤  雷出\n  背眼"
+            "R2\n  分攤  雷出  不動  記錄真假\n  背眼"
         );
     }
 
@@ -333,7 +364,7 @@ mod tests {
         ]));
         assert_eq!(
             text,
-            "R1\n  不動  分攤\n  背眼\n  放鋼鐵\nR2\n  水出\n  望眼\n  放月環 都不踩"
+            "R1\n  分攤  不動\n  背眼  記錄真假\n  放鋼鐵\nR2\n  水出  記錄真假\n  望眼\n  放月環 都不踩"
         );
     }
 
@@ -346,13 +377,16 @@ mod tests {
             ("round2_tf", "？"),
             ("round2_speed", "1 ⏩"),
         ]));
-        assert_eq!(text, "R1\n  要動  分攤\n  背眼\nR2\n  分攤\n  望眼");
+        assert_eq!(
+            text,
+            "R1\n  分攤  要動\n  背眼  記錄真假\nR2\n  分攤  記錄真假\n  望眼"
+        );
     }
 
     #[test]
     fn r2_only_from_r1_prefixed_action() {
         let text = calculate(&s(&[("round1_tf", "真"), ("round1_water", "2 💧")]));
-        assert_eq!(text, "R1\n  分攤\n  背眼\nR2\n  分攤");
+        assert_eq!(text, "R1\n  分攤\n  背眼  記錄真假\nR2\n  分攤  記錄真假");
     }
 
     #[test]
@@ -364,7 +398,7 @@ mod tests {
             &s(&[("round1_tf", "真"), ("round1_speed", "1 ⏩")]),
             &labels,
         );
-        assert_eq!(text, "第一\n  Stand  分攤\n  背眼");
+        assert_eq!(text, "第一\n  分攤  Stand\n  背眼  記錄真假");
     }
 
     #[test]
@@ -377,7 +411,7 @@ mod tests {
             &s(&[("round1_tf", "真"), ("round1_speed", "1 ⏩")]),
             &labels,
         );
-        assert_eq!(text, "  分攤");
+        assert_eq!(text, "  分攤\n  記錄真假");
     }
 
     #[test]
@@ -392,7 +426,7 @@ mod tests {
             ]),
             &labels,
         );
-        assert_eq!(text, "R1\n  分攤\n  背眼");
+        assert_eq!(text, "R1\n  分攤\n  背眼  記錄真假");
     }
 
     #[test]
@@ -400,7 +434,7 @@ mod tests {
         let mut labels = Labels::new();
         labels.insert("stepNone".into(), "".into());
         let text = calculate_labeled(&s(&[("round2_tf", "真"), ("water", "真")]), &labels);
-        assert_eq!(text, "R2\n  分攤\n  背眼\n  放月環");
+        assert_eq!(text, "R2\n  分攤  記錄真假\n  背眼\n  放月環");
     }
 
     #[test]
@@ -416,7 +450,10 @@ mod tests {
             ]),
             &labels,
         );
-        assert_eq!(text, "R1\n  分攤\n  背眼\nR2\n  分攤\n  望眼");
+        assert_eq!(
+            text,
+            "R1\n  分攤\n  背眼  記錄真假\nR2\n  分攤  記錄真假\n  望眼"
+        );
     }
 
     #[test]
@@ -433,7 +470,10 @@ mod tests {
             ]),
             &labels,
         );
-        assert_eq!(text, "R1\n  分攤\n  望眼\nR2\n  分攤\n  背眼");
+        assert_eq!(
+            text,
+            "R1\n  分攤\n  望眼  記錄真假\nR2\n  分攤  記錄真假\n  背眼"
+        );
     }
 
     #[test]
@@ -450,6 +490,44 @@ mod tests {
             ]),
             &labels,
         );
-        assert_eq!(text, "R1\n\n  分攤\n  背眼\n  放鋼鐵\n  分攤\n  背眼\n  放月環 都不踩");
+        assert_eq!(
+            text,
+            "R1\n\n  分攤\n  背眼  記錄真假\n  放鋼鐵\n  分攤  記錄真假\n  背眼\n  放月環 都不踩"
+        );
+    }
+
+    #[test]
+    fn custom_record_tf_replaces_default() {
+        let mut labels = Labels::new();
+        labels.insert("recordTf".into(), "記TF".into());
+        let text = calculate_labeled(
+            &s(&[
+                ("round1_tf", "真"),
+                ("round2_tf", "真"),
+                ("round1_speed", "1 ⏩"),
+                ("round2_speed", "2 ⏩"),
+            ]),
+            &labels,
+        );
+        assert_eq!(
+            text,
+            "R1\n  分攤  不動\n  背眼  記TF\nR2\n  分攤  不動  記TF\n  背眼"
+        );
+    }
+
+    #[test]
+    fn empty_record_tf_omits_suffix() {
+        let mut labels = Labels::new();
+        labels.insert("recordTf".into(), "".into());
+        let text = calculate_labeled(
+            &s(&[
+                ("round1_tf", "真"),
+                ("round2_tf", "真"),
+                ("round1_speed", "1 ⏩"),
+                ("round2_speed", "2 ⏩"),
+            ]),
+            &labels,
+        );
+        assert_eq!(text, "R1\n  分攤  不動\n  背眼\nR2\n  分攤  不動\n  背眼");
     }
 }

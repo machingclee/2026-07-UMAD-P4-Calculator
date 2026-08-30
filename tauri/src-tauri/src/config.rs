@@ -12,6 +12,7 @@ const LABEL_KEYS: &[&str] = &[
     "move",
     "lookAway",
     "lookAt",
+    "recordTf",
     "waterOut",
     "thunderOut",
     "share",

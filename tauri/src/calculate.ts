@@ -19,15 +19,20 @@ function pushLabel(lines: string[], text: string, indent = "") {
   for (const part of parts) lines.push(indent + part);
 }
 
+function joinParts(...parts: string[]): string {
+  return parts.filter((s) => s !== "").join("  ");
+}
+
 /** 水出/雷出 may be blank; 水分攤/雷分攤 fall back to 分攤. */
 function waterThunderWord(text: string, isOut: boolean): string {
   if (text !== "") return text;
   return isOut ? "" : "分攤";
 }
 
-/** Same as python/main.py `_actions`. */
+/** Same as python/main.py `_actions`, with 分攤/水出/雷出 before 要動/不動. */
 function actions(selections: State, prefix: string, labels: Labels): string[] {
-  const out: string[] = [];
+  const waterThunder: string[] = [];
+  const speedActs: string[] = [];
   let hasShare = false;
   const share = waterThunderWord(labels.share, false);
   for (const rnd of ["round1", "round2"] as const) {
@@ -37,29 +42,31 @@ function actions(selections: State, prefix: string, labels: Labels): string[] {
     const spd = get(selections, `${rnd}_speed`);
     const wat = get(selections, `${rnd}_water`);
     const thu = get(selections, `${rnd}_thunder`);
-    if (spd.includes(prefix)) out.push(isTrue ? labels.stay : labels.move);
     if (wat.includes(prefix)) {
       if (isTrue) {
         if (!hasShare) {
-          out.push(share);
+          waterThunder.push(share);
           hasShare = true;
         }
       } else {
         const word = waterThunderWord(labels.waterOut, true);
-        if (word) out.push(word);
+        if (word) waterThunder.push(word);
       }
     }
     if (thu.includes(prefix)) {
       if (isTrue) {
         const word = waterThunderWord(labels.thunderOut, true);
-        if (word) out.push(word);
+        if (word) waterThunder.push(word);
       } else if (!hasShare) {
-        out.push(share);
+        waterThunder.push(share);
         hasShare = true;
       }
     }
+    if (spd.includes(prefix)) {
+      speedActs.push(isTrue ? labels.stay : labels.move);
+    }
   }
-  return out.filter((s) => s !== "");
+  return [...waterThunder, ...speedActs].filter((s) => s !== "");
 }
 
 function withShareIfNoOut(acts: string[], labels: Labels): string[] {
@@ -68,7 +75,7 @@ function withShareIfNoOut(acts: string[], labels: Labels): string[] {
   const thunderOut = waterThunderWord(labels.thunderOut, true);
   const hasOut = acts.some((a) => a === waterOut || a === thunderOut);
   const hasShare = share !== "" && acts.includes(share);
-  if (!hasOut && !hasShare && share) return [...acts, share];
+  if (!hasOut && !hasShare && share) return [share, ...acts];
   return acts;
 }
 
@@ -93,10 +100,20 @@ export function calculate(state: State, labels: Labels = DEFAULT_LABELS): string
     let acts = actions(state, prefix, labels);
     if (!tf && acts.length === 0) continue;
     acts = withShareIfNoOut(acts, labels);
+    const suffix = labels.recordTf;
     const block: string[] = [];
     pushLabel(block, rnd === "round1" ? labels.r1 : labels.r2);
-    if (acts.length) pushLabel(block, acts.join("  "), "  ");
-    pushLabel(block, eye, "  ");
+    if (acts.length) {
+      const actsText = acts.join("  ");
+      pushLabel(
+        block,
+        rnd === "round2" ? joinParts(actsText, suffix) : actsText,
+        "  ",
+      );
+    } else if (rnd === "round2") {
+      pushLabel(block, suffix, "  ");
+    }
+    pushLabel(block, rnd === "round1" ? joinParts(eye, suffix) : eye, "  ");
     if (rnd === "round1") {
       const fVal = get(state, "fire");
       if (fVal) pushLabel(block, fVal === "真" ? labels.steel : labels.moon, "  ");
