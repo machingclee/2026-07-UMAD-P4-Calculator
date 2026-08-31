@@ -4,7 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { overlayText } from "./calculate";
-import { isTauri, publishOverlayDrag, publishOverlayText } from "./env";
+import {
+  isTauri,
+  publishOverlayDrag,
+  publishOverlayLineGap,
+  publishOverlayText,
+} from "./env";
 import {
   Theme,
   applyTheme,
@@ -18,6 +23,13 @@ import {
   parseShadeEdge,
   persistShadeEdgeLocal,
 } from "./shadeEdge";
+import {
+  DEFAULT_LINE_GAP,
+  MAX_LINE_GAP,
+  loadLineGapLocal,
+  parseLineGap,
+  persistLineGapLocal,
+} from "./lineGap";
 import {
   ACTION_BADGE_FONT_SIZE,
   ACTION_BADGE_TOP,
@@ -451,6 +463,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<"general" | "custom">("general");
   const [theme, setTheme] = useState<Theme | null>(null);
   const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
+  const [lineGap, setLineGap] = useState<number | null>(null);
   const [labels, setLabels] = useState<Labels>({ ...DEFAULT_LABELS });
   const [labelsReady, setLabelsReady] = useState(false);
 
@@ -469,6 +482,9 @@ function App() {
       invoke<string>("get_shade_edge")
         .then((value) => setShadeEdge(parseShadeEdge(value)))
         .catch(() => setShadeEdge("bottom"));
+      invoke<number>("get_line_gap")
+        .then((value) => setLineGap(parseLineGap(value)))
+        .catch(() => setLineGap(DEFAULT_LINE_GAP));
       invoke<Partial<Record<string, string>>>("get_labels")
         .then((value) => {
           setLabels(mergeLabels(value));
@@ -479,6 +495,7 @@ function App() {
     }
     setTheme(loadThemeLocal());
     setShadeEdge(loadShadeEdgeLocal());
+    setLineGap(loadLineGapLocal());
     setLabels(loadLabelsLocal());
     setLabelsReady(true);
   }, []);
@@ -505,6 +522,16 @@ function App() {
     }
     persistShadeEdgeLocal(shadeEdge);
   }, [shadeEdge]);
+
+  useEffect(() => {
+    if (lineGap === null) return;
+    if (isTauri()) {
+      invoke("set_line_gap", { px: lineGap }).catch(() => { });
+      return;
+    }
+    persistLineGapLocal(lineGap);
+    publishOverlayLineGap(lineGap);
+  }, [lineGap]);
 
   useEffect(() => {
     if (!labelsReady) return;
@@ -612,74 +639,107 @@ function App() {
                 </div>
               </OverlayScrollbarsComponent>
             ) : (
-              <div className="h-full overflow-auto p-1">
-              <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
-                <thead>
-                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                    <th className="py-1 pr-3 font-bold">選項</th>
-                    <th className="py-1 font-bold">設定</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                    <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
-                    <td className="py-1.5">
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          type="button"
-                          className={actionBtnClass(theme !== "dark")}
-                          tabIndex={-1}
-                          aria-pressed={theme !== "dark"}
-                          onClick={() => setTheme("light")}
-                        >
-                          淺色
-                        </button>
-                        <button
-                          type="button"
-                          className={actionBtnClass(theme === "dark")}
-                          tabIndex={-1}
-                          aria-pressed={theme === "dark"}
-                          onClick={() => setTheme("dark")}
-                        >
-                          深色
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                    <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
-                    <td className="py-1.5">
-                      <div className="flex flex-wrap gap-1">
-                        <button
-                          type="button"
-                          className={actionBtnClass(edge === "top")}
-                          tabIndex={-1}
-                          aria-pressed={edge === "top"}
-                          onClick={() => setShadeEdge("top")}
-                        >
-                          向上
-                        </button>
-                        <button
-                          type="button"
-                          className={actionBtnClass(edge === "bottom")}
-                          tabIndex={-1}
-                          aria-pressed={edge === "bottom"}
-                          onClick={() => setShadeEdge("bottom")}
-                        >
-                          向下
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
-                    <td className="py-1.5 text-[#555] dark:text-[#aaa]">
-                      可拖曳調整位置
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              </div>
+              <OverlayScrollbarsComponent
+                defer
+                className="h-full"
+                options={{
+                  overflow: { x: "hidden" },
+                  scrollbars: {
+                    theme: theme === "dark" ? "os-theme-light" : "os-theme-dark",
+                    autoHide: "leave",
+                    autoHideDelay: 600,
+                  },
+                }}
+              >
+                <div className="p-1">
+                  <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+                    <thead>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                        <th className="py-1 pr-3 font-bold">選項</th>
+                        <th className="py-1 font-bold">設定</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                        <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
+                        <td className="py-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className={actionBtnClass(theme !== "dark")}
+                              tabIndex={-1}
+                              aria-pressed={theme !== "dark"}
+                              onClick={() => setTheme("light")}
+                            >
+                              淺色
+                            </button>
+                            <button
+                              type="button"
+                              className={actionBtnClass(theme === "dark")}
+                              tabIndex={-1}
+                              aria-pressed={theme === "dark"}
+                              onClick={() => setTheme("dark")}
+                            >
+                              深色
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                        <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
+                        <td className="py-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className={actionBtnClass(edge === "top")}
+                              tabIndex={-1}
+                              aria-pressed={edge === "top"}
+                              onClick={() => setShadeEdge("top")}
+                            >
+                              向上
+                            </button>
+                            <button
+                              type="button"
+                              className={actionBtnClass(edge === "bottom")}
+                              tabIndex={-1}
+                              aria-pressed={edge === "bottom"}
+                              onClick={() => setShadeEdge("bottom")}
+                            >
+                              向下
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                        <td className="whitespace-nowrap py-1.5 pr-3">行距</td>
+                        <td className="py-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="range"
+                              min={0}
+                              max={MAX_LINE_GAP}
+                              step={1}
+                              value={lineGap ?? DEFAULT_LINE_GAP}
+                              tabIndex={-1}
+                              className="min-w-0 flex-1 accent-[#0078d7]"
+                              onChange={(e) => setLineGap(parseLineGap(e.target.value))}
+                            />
+                            <span className="w-[3.2em] shrink-0 text-[#555] dark:text-[#aaa]">
+                              {lineGap ?? DEFAULT_LINE_GAP} px
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
+                        <td className="py-1.5 text-[#555] dark:text-[#aaa]">
+                          可拖曳調整位置
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </OverlayScrollbarsComponent>
             )}
           </div>
           <div className="mt-auto flex flex-wrap items-center gap-1.5 p-1">

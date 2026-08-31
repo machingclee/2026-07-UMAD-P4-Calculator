@@ -68,6 +68,9 @@ pub struct Config {
     /// `"top"`: title chip stays on the top edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shade_edge: Option<String>,
+    /// Extra space between overlay text lines, in CSS pixels. `0` keeps default line-height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_gap: Option<i32>,
     /// Sparse overrides for UI / overlay strings. Missing keys use built-in defaults.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub labels: HashMap<String, String>,

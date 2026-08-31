@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -13,7 +14,17 @@ import {
   STROKE_RADIUS,
   STROKE_STEP_DEG,
 } from "./constants";
-import { OVERLAY_DRAG_EVENT, OVERLAY_TEXT_EVENT, isTauri } from "./env";
+import {
+  OVERLAY_DRAG_EVENT,
+  OVERLAY_LINE_GAP_EVENT,
+  OVERLAY_TEXT_EVENT,
+  isTauri,
+} from "./env";
+import {
+  DEFAULT_LINE_GAP,
+  loadLineGapLocal,
+  parseLineGap,
+} from "./lineGap";
 import { fitOverlayToElement } from "./windowSize";
 
 function strokeShadow(): string {
@@ -31,6 +42,7 @@ export default function Overlay() {
   const boxRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [dragEnabled, setDragEnabled] = useState(false);
+  const [lineGap, setLineGap] = useState(DEFAULT_LINE_GAP);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const shadow = useMemo(strokeShadow, []);
 
@@ -66,7 +78,7 @@ export default function Overlay() {
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [display, dragEnabled]);
+  }, [display, dragEnabled, lineGap]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -82,6 +94,26 @@ export default function Overlay() {
     };
     window.addEventListener(OVERLAY_DRAG_EVENT, onDrag);
     return () => window.removeEventListener(OVERLAY_DRAG_EVENT, onDrag);
+  }, []);
+
+  useEffect(() => {
+    if (isTauri()) {
+      invoke<number>("get_line_gap")
+        .then((value) => setLineGap(parseLineGap(value)))
+        .catch(() => {});
+      const unlisten = listen<number>("overlay-line-gap", (event) => {
+        setLineGap(parseLineGap(event.payload));
+      });
+      return () => {
+        unlisten.then((fn) => fn()).catch(() => {});
+      };
+    }
+    setLineGap(loadLineGapLocal());
+    const onGap = (event: Event) => {
+      setLineGap(parseLineGap((event as CustomEvent<number>).detail));
+    };
+    window.addEventListener(OVERLAY_LINE_GAP_EVENT, onGap);
+    return () => window.removeEventListener(OVERLAY_LINE_GAP_EVENT, onGap);
   }, []);
 
   useEffect(() => {
@@ -124,7 +156,7 @@ export default function Overlay() {
     >
       {display || dragEnabled ? (
         <div
-          className={`box-border whitespace-pre text-left leading-[1.35] ${
+          className={`box-border flex flex-col text-left leading-[1.35] ${
             dragEnabled
               ? "min-h-[1.4em] min-w-[4em] cursor-move rounded px-3.5 py-2.5"
               : ""
@@ -138,9 +170,16 @@ export default function Overlay() {
             textShadow: shadow,
             background: dragEnabled ? DRAG_BG : undefined,
             padding: dragEnabled ? undefined : strokePad,
+            gap: lineGap,
           }}
         >
-          {display}
+          {display
+            ? display.split("\n").map((line, i) => (
+                <div key={i} className="whitespace-pre">
+                  {line === "" ? "\u00a0" : line}
+                </div>
+              ))
+            : null}
         </div>
       ) : null}
     </div>

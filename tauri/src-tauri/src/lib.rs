@@ -91,6 +91,27 @@ fn set_shade_edge(app: tauri::AppHandle, edge: String) {
     win32::set_shade_from_bottom(edge == "bottom");
 }
 
+fn parse_line_gap(value: Option<i32>) -> i32 {
+    match value {
+        Some(n) if n < 0 => 0,
+        Some(n) if n > 15 => 15,
+        Some(n) => n,
+        None => 0,
+    }
+}
+
+#[tauri::command]
+fn get_line_gap(app: tauri::AppHandle) -> i32 {
+    parse_line_gap(config::load(&app).line_gap)
+}
+
+#[tauri::command]
+fn set_line_gap(app: tauri::AppHandle, px: i32) {
+    let px = parse_line_gap(Some(px));
+    config::update(&app, |c| c.line_gap = Some(px));
+    let _ = app.emit("overlay-line-gap", px);
+}
+
 #[tauri::command]
 fn get_labels(app: tauri::AppHandle) -> HashMap<String, String> {
     config::load(&app).labels
@@ -159,6 +180,8 @@ pub fn run() {
             set_theme,
             get_shade_edge,
             set_shade_edge,
+            get_line_gap,
+            set_line_gap,
             get_labels,
             set_labels,
             set_input_mode,

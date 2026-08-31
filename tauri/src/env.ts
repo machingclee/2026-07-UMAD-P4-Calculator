@@ -4,6 +4,7 @@ export function isTauri(): boolean {
 
 export const OVERLAY_TEXT_EVENT = "overlay-text";
 export const OVERLAY_DRAG_EVENT = "overlay-drag";
+export const OVERLAY_LINE_GAP_EVENT = "overlay-line-gap";
 
 export function publishOverlayText(text: string) {
   window.dispatchEvent(new CustomEvent(OVERLAY_TEXT_EVENT, { detail: text }));
@@ -11,4 +12,8 @@ export function publishOverlayText(text: string) {
 
 export function publishOverlayDrag(enabled: boolean) {
   window.dispatchEvent(new CustomEvent(OVERLAY_DRAG_EVENT, { detail: enabled }));
+}
+
+export function publishOverlayLineGap(px: number) {
+  window.dispatchEvent(new CustomEvent(OVERLAY_LINE_GAP_EVENT, { detail: px }));
 }
