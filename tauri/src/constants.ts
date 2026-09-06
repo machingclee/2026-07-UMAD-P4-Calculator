@@ -7,6 +7,8 @@ export const DEBUG = false; // show overlay X/Y in the main window title when dr
 
 export const APP_WIDTH = 360; // main window width
 export const APP_HEIGHT = 250; // main window height
+export const COMPACT_APP_WIDTH = 180; // expanded + Original Menu off (清除 + 變更)
+export const COMPACT_APP_HEIGHT = 52;
 // Overlay hugs its text. Native first-frame size/position: src-tauri/src/constants.rs.
 
 export const FONT_FAMILY =
@@ -25,9 +27,13 @@ export const DRAG_BG = "rgba(0, 0, 0, 0.55)"; // text plate while dragging is en
 export const FONT_SIZE = 14;
 export const EMOJI_SIZE = 18; // 🔥 💧 ❓ and other UI emoji
 export const ACTION_ICON_SIZE = 30; // webp icons on ⏩ 💧 ⚡ badge buttons
-export const ICON_OVERLAY_SIZE = 54; // speed.webp / light.webp in the icon overlay
-export const ICON_OVERLAY_GAP = 0; // px between the two overlay icons
-export const ICON_OVERLAY_DIM_OPACITY = 0.4; // clicked / both-rounds-filled icons
+export const STEPS_OVERLAY_SIZE = 54; // speed.webp / light.webp in the icon overlay
+export const STEPS_OVERLAY_GAP = 0; // px between the two overlay icons
+export const STEPS_OVERLAY_DIM_OPACITY = 0.4; // clicked / both-rounds-filled icons
+export const STEPS_OVERLAY_FONT_SIZE = 20; // 2× FONT_SIZE; wizard buttons / captions
+export const STEPS_OVERLAY_EMOJI_SIZE = 20; // 2× EMOJI_SIZE; 🔥 💧 and HUD 速度/雷
+export const STEPS_OVERLAY_BADGE_FONT_SIZE = 18; // 2× ACTION_BADGE_FONT_SIZE
+export const STEPS_OVERLAY_QUESTION_SIZE = 26 // ? in ❓十字 / ❓火 / ❓水 / 石化眼--雷
 export const LABEL_WIDTH = 5; // character width for row labels in round blocks
 export const LEFT_COL_WIDTH = 130; // px; right column takes the remaining space
 export const ACTION_BTN_WIDTH = 52; // px; ⏩ 💧 ⚡ buttons only

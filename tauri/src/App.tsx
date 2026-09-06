@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { overlayText } from "./calculate";
+import { applyMainWindowLayout } from "./windowSize";
 import {
+  CALCULATOR_SET_EVENT,
+  CALCULATOR_STATE_REQUEST_EVENT,
   isTauri,
+  publishCalculatorState,
   publishDebuffOverlay,
-  publishDebuffOverlayState,
   publishOverlayDrag,
   publishOverlayLineGap,
   publishOverlayText,
+  type CalculatorSet,
 } from "./env";
 import {
   Theme,
@@ -37,6 +41,11 @@ import {
   parseDebuffOverlay,
   persistDebuffOverlayLocal,
 } from "./debuffOverlay";
+import {
+  loadOriginalMenuLocal,
+  parseOriginalMenu,
+  persistOriginalMenuLocal,
+} from "./originalMenu";
 import {
   ACTION_BADGE_FONT_SIZE,
   ACTION_BADGE_TOP,
@@ -73,8 +82,8 @@ import {
 import {
   EMPTY_STATE,
   State,
-  debuffIconState,
   isExcluded,
+  isStateKey,
   toggleValue,
 } from "./state";
 import speedIcon from "./assets/speed.webp";
@@ -473,12 +482,15 @@ function App() {
   const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
   const [lineGap, setLineGap] = useState<number | null>(null);
   const [debuffOverlay, setDebuffOverlay] = useState<boolean | null>(null);
+  const [originalMenu, setOriginalMenu] = useState<boolean | null>(null);
   const [labels, setLabels] = useState<Labels>({ ...DEFAULT_LABELS });
   const [labelsReady, setLabelsReady] = useState(false);
 
   const setField = useCallback((key: string, value: string) => {
     setState((prev) => ({ ...prev, [key]: value }));
   }, []);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const fireColor = themeColor(theme, FIRE_COLOR, FIRE_COLOR_DARK);
   const waterColor = themeColor(theme, WATER_COLOR, WATER_COLOR_DARK);
@@ -497,6 +509,9 @@ function App() {
       invoke<boolean>("get_debuff_overlay")
         .then((value) => setDebuffOverlay(parseDebuffOverlay(value)))
         .catch(() => setDebuffOverlay(true));
+      invoke<boolean>("get_original_menu")
+        .then((value) => setOriginalMenu(parseOriginalMenu(value)))
+        .catch(() => setOriginalMenu(true));
       invoke<Partial<Record<string, string>>>("get_labels")
         .then((value) => {
           setLabels(mergeLabels(value));
@@ -509,6 +524,7 @@ function App() {
     setShadeEdge(loadShadeEdgeLocal());
     setLineGap(loadLineGapLocal());
     setDebuffOverlay(loadDebuffOverlayLocal());
+    setOriginalMenu(loadOriginalMenuLocal());
     setLabels(loadLabelsLocal());
     setLabelsReady(true);
   }, []);
@@ -557,6 +573,23 @@ function App() {
   }, [debuffOverlay]);
 
   useEffect(() => {
+    if (originalMenu === null) return;
+    if (isTauri()) {
+      invoke("set_original_menu", { enabled: originalMenu }).catch(() => { });
+      return;
+    }
+    persistOriginalMenuLocal(originalMenu);
+  }, [originalMenu]);
+
+  useEffect(() => {
+    if (originalMenu === null) return;
+    void applyMainWindowLayout({
+      compact: !changeMode && originalMenu === false,
+      shadeFromBottom: (shadeEdge ?? "bottom") === "bottom",
+    });
+  }, [changeMode, originalMenu, shadeEdge]);
+
+  useEffect(() => {
     if (!labelsReady) return;
     const merged = mergeLabels(labels);
     if (isTauri()) {
@@ -577,13 +610,44 @@ function App() {
   }, [state, labels, labelsReady]);
 
   useEffect(() => {
-    const payload = debuffIconState(state);
     if (isTauri()) {
-      emit("debuff-overlay-state", payload).catch(() => { });
+      emit("calculator-state", state).catch(() => { });
       return;
     }
-    publishDebuffOverlayState(payload);
+    publishCalculatorState(state);
   }, [state]);
+
+  useEffect(() => {
+    if (isTauri()) {
+      const unlistenSet = listen<CalculatorSet>("calculator-set", (event) => {
+        const key = event.payload?.key;
+        const value = event.payload?.value;
+        if (typeof key === "string" && isStateKey(key) && typeof value === "string") {
+          setField(key, value);
+        }
+      });
+      const unlistenReq = listen("calculator-state-request", () => {
+        emit("calculator-state", stateRef.current).catch(() => { });
+      });
+      return () => {
+        unlistenSet.then((fn) => fn()).catch(() => { });
+        unlistenReq.then((fn) => fn()).catch(() => { });
+      };
+    }
+    const onSet = (event: Event) => {
+      const patch = (event as CustomEvent<CalculatorSet>).detail;
+      if (patch && isStateKey(patch.key) && typeof patch.value === "string") {
+        setField(patch.key, patch.value);
+      }
+    };
+    const onReq = () => publishCalculatorState(stateRef.current);
+    window.addEventListener(CALCULATOR_SET_EVENT, onSet);
+    window.addEventListener(CALCULATOR_STATE_REQUEST_EVENT, onReq);
+    return () => {
+      window.removeEventListener(CALCULATOR_SET_EVENT, onSet);
+      window.removeEventListener(CALCULATOR_STATE_REQUEST_EVENT, onReq);
+    };
+  }, [setField]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -768,8 +832,8 @@ function App() {
                           可拖曳調整位置
                         </td>
                       </tr>
-                      <tr>
-                        <td className="whitespace-nowrap py-1.5 pr-3">Debuff Overlay</td>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                        <td className="whitespace-nowrap py-1.5 pr-3">Show Steps Overlay</td>
                         <td className="py-1.5">
                           <div className="flex flex-wrap gap-1">
                             <button
@@ -793,6 +857,31 @@ function App() {
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td className="whitespace-nowrap py-1.5 pr-3">Show Original Menu</td>
+                        <td className="py-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className={actionBtnClass(originalMenu !== false)}
+                              tabIndex={-1}
+                              aria-pressed={originalMenu !== false}
+                              onClick={() => setOriginalMenu(true)}
+                            >
+                              開
+                            </button>
+                            <button
+                              type="button"
+                              className={actionBtnClass(originalMenu === false)}
+                              tabIndex={-1}
+                              aria-pressed={originalMenu === false}
+                              onClick={() => setOriginalMenu(false)}
+                            >
+                              關
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -802,6 +891,24 @@ function App() {
           <div className="mt-auto flex flex-wrap items-center gap-1.5 p-1">
             {changeButton}
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (originalMenu === false) {
+    return (
+      <main className="h-full w-full select-none overflow-hidden bg-[var(--app-bg)] text-black dark:text-[#e8e8e8]">
+        <div className="flex h-full items-center gap-1.5 p-2">
+          <button
+            type="button"
+            className={actionBtnClass(false)}
+            tabIndex={-1}
+            onClick={() => setState({ ...EMPTY_STATE })}
+          >
+            清除
+          </button>
+          {changeButton}
         </div>
       </main>
     );

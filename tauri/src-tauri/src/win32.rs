@@ -379,6 +379,13 @@ mod imp {
         (text + borders + 24).max(80)
     }
 
+    /// Width used only while shaded to a title chip (does not change expanded min-size).
+    fn shaded_title_width(hwnd: HWND) -> i32 {
+        let text = measure_title_width(hwnd);
+        let borders = horiz_border_width(hwnd).max(0);
+        (text + borders + 56).max(80)
+    }
+
     fn frame_changed(hwnd: HWND) {
         unsafe {
             SetWindowPos(
@@ -537,7 +544,7 @@ mod imp {
             TITLEBAR_SHADED.store(true, Ordering::SeqCst);
             apply_compact_chrome(hwnd);
             let compact_h = titlebar_only_height(hwnd).max(shade_h);
-            let compact_w = compact_window_width(hwnd);
+            let compact_w = shaded_title_width(hwnd);
             let new_y = if from_bottom {
                 rect.bottom - compact_h
             } else {

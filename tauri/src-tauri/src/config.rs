@@ -58,6 +58,9 @@ pub struct Config {
     pub overlay_icons_x: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlay_icons_y: Option<i32>,
+    /// Physical bottom edge of the icon overlay; used so height changes grow upward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_icons_bottom: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_x: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,6 +81,9 @@ pub struct Config {
     /// Show the speed / thunder icon overlay when the main window is expanded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debuff_overlay: Option<bool>,
+    /// Show the full calculator menu when the main window is expanded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_menu: Option<bool>,
     /// Sparse overrides for UI / overlay strings. Missing keys use built-in defaults.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub labels: HashMap<String, String>,

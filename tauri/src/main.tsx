@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import Overlay from "./Overlay";
-import IconOverlay from "./IconOverlay";
+import StepsOverlay from "./StepsOverlay";
 import Preview from "./Preview";
 import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { applyCssVars } from "./constants";
@@ -32,7 +32,7 @@ if (isTauri()) {
     label === "overlay" ? (
       <Overlay />
     ) : label === "overlay-icons" ? (
-      <IconOverlay />
+      <StepsOverlay />
     ) : (
       <App />
     );

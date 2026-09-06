@@ -1,7 +1,7 @@
 import { useState } from "react";
 import App from "./App";
 import Overlay from "./Overlay";
-import IconOverlay from "./IconOverlay";
+import StepsOverlay from "./StepsOverlay";
 import { APP_HEIGHT, APP_WIDTH } from "./constants";
 import { publishAppExpanded } from "./env";
 
@@ -32,7 +32,7 @@ export default function Preview() {
         </div>
       </div>
       <div className="flex flex-col gap-2">
-        <div className="text-xs leading-tight text-[#bbb]">Debuff overlay (expanded only)</div>
+        <div className="text-xs leading-tight text-[#bbb]">Steps overlay (expanded only)</div>
         <div className="flex gap-1 text-[11px]">
           <button
             type="button"
@@ -60,7 +60,7 @@ export default function Preview() {
         <div
           className="w-fit min-h-[2rem] overflow-hidden bg-[#2b2b2b] shadow-[0_8px_24px_rgba(0,0,0,0.4)] [background-image:linear-gradient(45deg,#3a3a3a_25%,transparent_25%),linear-gradient(-45deg,#3a3a3a_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#3a3a3a_75%),linear-gradient(-45deg,transparent_75%,#3a3a3a_75%)] [background-position:0_0,0_8px,8px_-8px,-8px_0] [background-size:16px_16px]"
         >
-          <IconOverlay />
+          <StepsOverlay />
         </div>
       </div>
       <p className="max-w-[860px] basis-full text-xs leading-normal text-[#999]">

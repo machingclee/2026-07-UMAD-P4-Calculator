@@ -145,7 +145,9 @@ async fn open_in_vscode(app: tauri::AppHandle, path: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
-fn persist_moved(app: &tauri::AppHandle, label: &str, x: i32, y: i32) {
+fn persist_moved(window: &tauri::Window, x: i32, y: i32) {
+    let app = window.app_handle();
+    let label = window.label();
     if label == "main" {
         if win32::is_titlebar_shaded() {
             return;
@@ -162,9 +164,16 @@ fn persist_moved(app: &tauri::AppHandle, label: &str, x: i32, y: i32) {
             c.overlay_y = Some(y);
         });
     } else if label == "overlay-icons" {
+        let bottom = window
+            .outer_size()
+            .ok()
+            .map(|size| y.saturating_add(size.height as i32));
         config::update(app, |c| {
             c.overlay_icons_x = Some(x);
             c.overlay_icons_y = Some(y);
+            if let Some(value) = bottom {
+                c.overlay_icons_bottom = Some(value);
+            }
         });
     }
 }
@@ -217,6 +226,20 @@ fn set_debuff_overlay(app: tauri::AppHandle, enabled: bool) {
     let _ = app.emit("debuff-overlay", enabled);
 }
 
+fn parse_original_menu(value: Option<bool>) -> bool {
+    value.unwrap_or(true)
+}
+
+#[tauri::command]
+fn get_original_menu(app: tauri::AppHandle) -> bool {
+    parse_original_menu(config::load(&app).original_menu)
+}
+
+#[tauri::command]
+fn set_original_menu(app: tauri::AppHandle, enabled: bool) {
+    config::update(&app, |c| c.original_menu = Some(enabled));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Same as python/main.py: mutex check happens before any window is created.
@@ -242,10 +265,12 @@ pub fn run() {
             get_expanded,
             get_debuff_overlay,
             set_debuff_overlay,
+            get_original_menu,
+            set_original_menu,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Moved(pos) => {
-                persist_moved(window.app_handle(), window.label(), pos.x, pos.y);
+                persist_moved(window, pos.x, pos.y);
                 if DEBUG && window.label() == "overlay" {
                     if let Some(main) = window.app_handle().get_webview_window("main") {
                         let _ = main.set_title(&format!(
@@ -312,7 +337,11 @@ pub fn run() {
             }
 
             let icon_x = cfg.overlay_icons_x.unwrap_or(ICON_OVERLAY_X as i32);
-            let icon_y = cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32);
+            let icon_h = ICON_OVERLAY_HEIGHT as i32;
+            let icon_y = match cfg.overlay_icons_bottom {
+                Some(bottom) => bottom - icon_h,
+                None => cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32),
+            };
             let icon_overlay = open_overlay(
                 app,
                 "overlay-icons",
