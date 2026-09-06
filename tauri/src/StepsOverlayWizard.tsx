@@ -4,6 +4,7 @@ import waterIcon from "./assets/water.webp";
 import lightIcon from "./assets/light.webp";
 import {
   DRAG_BG,
+  FILL_COLOR,
   FIRE_COLOR_DARK,
   STEPS_OVERLAY_BADGE_FONT_SIZE,
   STEPS_OVERLAY_DIM_OPACITY,
@@ -13,6 +14,9 @@ import {
   STEPS_OVERLAY_SIZE,
   QUESTION_COLOR_DARK,
   SPEED,
+  STROKE_COLOR,
+  STROKE_RADIUS,
+  STROKE_STEP_DEG,
   THUNDER,
   TRUE_FALSE,
   WATER,
@@ -27,6 +31,17 @@ import {
 
 const LABEL_STROKE =
   "-1px -1px 0 #000000, 1px -1px 0 #000000, -1px 1px 0 #000000, 1px 1px 0 #000000";
+
+function overlayStrokeShadow(): string {
+  const parts: string[] = [];
+  for (let angle = 0; angle < 360; angle += STROKE_STEP_DEG) {
+    const rad = (angle * Math.PI) / 180;
+    const dx = Math.cos(rad) * STROKE_RADIUS;
+    const dy = Math.sin(rad) * STROKE_RADIUS;
+    parts.push(`${dx.toFixed(2)}px ${dy.toFixed(2)}px 0 ${STROKE_COLOR}`);
+  }
+  return parts.join(", ");
+}
 
 function QuestionMark({ color }: { color?: string }) {
   return (
@@ -78,12 +93,14 @@ function OverlayButton({
   selected,
   disabled,
   color,
+  solid,
   onClick,
   children,
 }: {
   selected: boolean;
   disabled?: boolean;
   color?: string;
+  solid?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -94,13 +111,25 @@ function OverlayButton({
       disabled={disabled}
       aria-pressed={selected}
       onClick={onClick}
-      className="appearance-none rounded-sm border px-3 py-1 font-bold leading-snug"
+      className={`appearance-none rounded-sm px-3 py-1 font-bold leading-snug ${solid ? "border-2" : "border"
+        }`}
       style={{
         fontSize: STEPS_OVERLAY_FONT_SIZE,
         cursor: disabled ? "default" : "pointer",
         color: color ?? "#ffffff",
-        background: selected ? "rgba(27, 61, 85, 0.92)" : "rgba(0, 0, 0, 0.45)",
-        borderColor: selected ? "#8ec8ff" : "rgba(255, 255, 255, 0.35)",
+        background: selected
+          ? solid
+            ? "#1b3d55"
+            : "rgba(27, 61, 85, 0.92)"
+          : solid
+            ? "rgba(0, 0, 0, 0.4)"
+            : "rgba(0, 0, 0, 0.45)",
+        borderColor: selected
+          ? "#8ec8ff"
+          : solid
+            ? "rgba(255, 255, 255, 0.55)"
+            : "rgba(255, 255, 255, 0.35)",
+        boxShadow: selected && solid ? "0 0 0 2px #8ec8ff" : undefined,
         opacity: disabled ? STEPS_OVERLAY_DIM_OPACITY : 1,
         WebkitTextStroke: "0.4px #000000",
         paintOrder: "stroke fill",
@@ -112,13 +141,30 @@ function OverlayButton({
   );
 }
 
-function Caption({ text }: { text: string }) {
+function SolidQuestion({ selected }: { selected: boolean }) {
+  return (
+    <span
+      className="inline-block font-bold leading-none"
+      style={{
+        color: selected ? FILL_COLOR : QUESTION_COLOR_DARK,
+        fontSize: STEPS_OVERLAY_QUESTION_SIZE,
+        textShadow: selected ? overlayStrokeShadow() : LABEL_STROKE,
+        WebkitTextStroke: selected ? undefined : "2px #000000",
+        paintOrder: "stroke fill",
+      }}
+    >
+      ？
+    </span>
+  );
+}
+
+function Caption({ text, overlayStroke }: { text: string; overlayStroke?: boolean }) {
   return (
     <div
       className="font-bold leading-none"
       style={{
-        color: "#ffffff",
-        textShadow: LABEL_STROKE,
+        color: overlayStroke ? FILL_COLOR : "#ffffff",
+        textShadow: overlayStroke ? overlayStrokeShadow() : LABEL_STROKE,
         fontSize: STEPS_OVERLAY_FONT_SIZE,
       }}
     >
@@ -414,23 +460,25 @@ export function StepsOverlayWizard({
       {step === 7 ? (
         <>
           <div className="flex items-center gap-4">
-            <Caption text="石化眼--雷" />
+            <Caption text="石化眼--雷" overlayStroke />
             <OverlayButton
+              solid
               selected={state.thunder === "？"}
               disabled={locked}
               onClick={() => onSet("thunder", toggleValue(state.thunder, "？"))}
             >
-              <OverlayLabel text="？" />
+              <SolidQuestion selected={state.thunder === "？"} />
             </OverlayButton>
           </div>
           <div className="flex items-center gap-4">
-            <Caption text="二回目--冰" />
+            <Caption text="二回目--冰" overlayStroke />
             <OverlayButton
+              solid
               selected={state.ice === "？"}
               disabled={locked}
               onClick={() => onSet("ice", toggleValue(state.ice, "？"))}
             >
-              <OverlayLabel text="？" />
+              <SolidQuestion selected={state.ice === "？"} />
             </OverlayButton>
           </div>
         </>
