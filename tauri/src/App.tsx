@@ -6,6 +6,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { overlayText } from "./calculate";
 import {
   isTauri,
+  publishDebuffOverlay,
+  publishDebuffOverlayState,
   publishOverlayDrag,
   publishOverlayLineGap,
   publishOverlayText,
@@ -30,6 +32,11 @@ import {
   parseLineGap,
   persistLineGapLocal,
 } from "./lineGap";
+import {
+  loadDebuffOverlayLocal,
+  parseDebuffOverlay,
+  persistDebuffOverlayLocal,
+} from "./debuffOverlay";
 import {
   ACTION_BADGE_FONT_SIZE,
   ACTION_BADGE_TOP,
@@ -66,6 +73,7 @@ import {
 import {
   EMPTY_STATE,
   State,
+  debuffIconState,
   isExcluded,
   toggleValue,
 } from "./state";
@@ -464,6 +472,7 @@ function App() {
   const [theme, setTheme] = useState<Theme | null>(null);
   const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
   const [lineGap, setLineGap] = useState<number | null>(null);
+  const [debuffOverlay, setDebuffOverlay] = useState<boolean | null>(null);
   const [labels, setLabels] = useState<Labels>({ ...DEFAULT_LABELS });
   const [labelsReady, setLabelsReady] = useState(false);
 
@@ -485,6 +494,9 @@ function App() {
       invoke<number>("get_line_gap")
         .then((value) => setLineGap(parseLineGap(value)))
         .catch(() => setLineGap(DEFAULT_LINE_GAP));
+      invoke<boolean>("get_debuff_overlay")
+        .then((value) => setDebuffOverlay(parseDebuffOverlay(value)))
+        .catch(() => setDebuffOverlay(true));
       invoke<Partial<Record<string, string>>>("get_labels")
         .then((value) => {
           setLabels(mergeLabels(value));
@@ -496,6 +508,7 @@ function App() {
     setTheme(loadThemeLocal());
     setShadeEdge(loadShadeEdgeLocal());
     setLineGap(loadLineGapLocal());
+    setDebuffOverlay(loadDebuffOverlayLocal());
     setLabels(loadLabelsLocal());
     setLabelsReady(true);
   }, []);
@@ -534,6 +547,16 @@ function App() {
   }, [lineGap]);
 
   useEffect(() => {
+    if (debuffOverlay === null) return;
+    if (isTauri()) {
+      invoke("set_debuff_overlay", { enabled: debuffOverlay }).catch(() => { });
+      return;
+    }
+    persistDebuffOverlayLocal(debuffOverlay);
+    publishDebuffOverlay(debuffOverlay);
+  }, [debuffOverlay]);
+
+  useEffect(() => {
     if (!labelsReady) return;
     const merged = mergeLabels(labels);
     if (isTauri()) {
@@ -552,6 +575,15 @@ function App() {
     }
     publishOverlayText(overlayText(state, merged));
   }, [state, labels, labelsReady]);
+
+  useEffect(() => {
+    const payload = debuffIconState(state);
+    if (isTauri()) {
+      emit("debuff-overlay-state", payload).catch(() => { });
+      return;
+    }
+    publishDebuffOverlayState(payload);
+  }, [state]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -730,10 +762,35 @@ function App() {
                           </div>
                         </td>
                       </tr>
-                      <tr>
+                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
                         <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
                         <td className="py-1.5 text-[#555] dark:text-[#aaa]">
                           可拖曳調整位置
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="whitespace-nowrap py-1.5 pr-3">Debuff Overlay</td>
+                        <td className="py-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              className={actionBtnClass(debuffOverlay !== false)}
+                              tabIndex={-1}
+                              aria-pressed={debuffOverlay !== false}
+                              onClick={() => setDebuffOverlay(true)}
+                            >
+                              開
+                            </button>
+                            <button
+                              type="button"
+                              className={actionBtnClass(debuffOverlay === false)}
+                              tabIndex={-1}
+                              aria-pressed={debuffOverlay === false}
+                              onClick={() => setDebuffOverlay(false)}
+                            >
+                              關
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     </tbody>

@@ -16,11 +16,13 @@ export function applyNativeWindowSize(): Promise<void> {
 let lastOverlayW = 0;
 let lastOverlayH = 0;
 
+const OVERLAY_WINDOW_LABELS = new Set(["overlay", "overlay-icons"]);
+
 /** Size the overlay window to an element's laid-out box (1×1 when empty). */
 export function fitOverlayToElement(el: HTMLElement): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   const win = getCurrentWindow();
-  if (win.label !== "overlay") return Promise.resolve();
+  if (!OVERLAY_WINDOW_LABELS.has(win.label)) return Promise.resolve();
   const rect = el.getBoundingClientRect();
   // +1 covers subpixel / WebView2 inner-size rounding that otherwise shows scrollbars.
   const width = Math.max(1, Math.ceil(Math.max(el.scrollWidth, el.offsetWidth, rect.width)) + 1);

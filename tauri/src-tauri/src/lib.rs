@@ -5,8 +5,8 @@ mod win32;
 
 use calculate::State;
 use constants::{
-    APP_HEIGHT, APP_WIDTH, DEBUG, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X,
-    OVERLAY_Y,
+    APP_HEIGHT, APP_WIDTH, DEBUG, ICON_OVERLAY_HEIGHT, ICON_OVERLAY_WIDTH, ICON_OVERLAY_X,
+    ICON_OVERLAY_Y, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X, OVERLAY_Y,
 };
 use std::collections::HashMap;
 use tauri::{
@@ -161,7 +161,60 @@ fn persist_moved(app: &tauri::AppHandle, label: &str, x: i32, y: i32) {
             c.overlay_x = Some(x);
             c.overlay_y = Some(y);
         });
+    } else if label == "overlay-icons" {
+        config::update(app, |c| {
+            c.overlay_icons_x = Some(x);
+            c.overlay_icons_y = Some(y);
+        });
     }
+}
+
+fn open_overlay(
+    app: &mut tauri::App,
+    label: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+    x: i32,
+    y: i32,
+) -> tauri::Result<tauri::WebviewWindow> {
+    let win = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+        .title(title)
+        .inner_size(width, height)
+        .decorations(false)
+        .always_on_top(true)
+        .transparent(true)
+        .background_color(tauri::window::Color(0, 0, 0, 0))
+        .shadow(false)
+        .resizable(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .focusable(false)
+        .visible(true)
+        .build()?;
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+    Ok(win)
+}
+
+#[tauri::command]
+fn get_expanded() -> bool {
+    !win32::is_titlebar_shaded()
+}
+
+fn parse_debuff_overlay(value: Option<bool>) -> bool {
+    value.unwrap_or(true)
+}
+
+#[tauri::command]
+fn get_debuff_overlay(app: tauri::AppHandle) -> bool {
+    parse_debuff_overlay(config::load(&app).debuff_overlay)
+}
+
+#[tauri::command]
+fn set_debuff_overlay(app: tauri::AppHandle, enabled: bool) {
+    config::update(&app, |c| c.debuff_overlay = Some(enabled));
+    win32::sync_icon_overlay_visibility();
+    let _ = app.emit("debuff-overlay", enabled);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -186,6 +239,9 @@ pub fn run() {
             set_labels,
             set_input_mode,
             open_in_vscode,
+            get_expanded,
+            get_debuff_overlay,
+            set_debuff_overlay,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Moved(pos) => {
@@ -199,16 +255,24 @@ pub fn run() {
                     }
                     let _ = window.app_handle().emit("overlay-pos", (pos.x, pos.y));
                 }
+                if DEBUG && window.label() == "overlay-icons" {
+                    let _ = window
+                        .app_handle()
+                        .emit("overlay-icons-pos", (pos.x, pos.y));
+                }
             }
             WindowEvent::Destroyed if window.label() == "main" => {
-                if let Some(ovl) = window.app_handle().get_webview_window("overlay") {
-                    let _ = ovl.close();
+                for label in ["overlay", "overlay-icons"] {
+                    if let Some(ovl) = window.app_handle().get_webview_window(label) {
+                        let _ = ovl.close();
+                    }
                 }
             }
             _ => {}
         })
         .setup(|app| {
             let cfg = config::load(&app.handle());
+            win32::set_app_handle(app.handle().clone());
             let main = app
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
@@ -233,33 +297,40 @@ pub fn run() {
 
             let ovl_x = cfg.overlay_x.unwrap_or(OVERLAY_X as i32);
             let ovl_y = cfg.overlay_y.unwrap_or(OVERLAY_Y as i32);
-
-            let overlay = WebviewWindowBuilder::new(
+            let overlay = open_overlay(
                 app,
                 "overlay",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("FF14 P4 Calculator Overlay")
-            .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
-            .decorations(false)
-            .always_on_top(true)
-            .transparent(true)
-            .background_color(tauri::window::Color(0, 0, 0, 0))
-            .shadow(false)
-            .resizable(false)
-            .skip_taskbar(true)
-            .focused(false)
-            .focusable(false)
-            .visible(true)
-            .build()?;
-            let _ = overlay.set_position(PhysicalPosition::new(ovl_x, ovl_y));
+                "FF14 P4 Calculator Overlay",
+                OVERLAY_WIDTH,
+                OVERLAY_HEIGHT,
+                ovl_x,
+                ovl_y,
+            )?;
             if DEBUG {
                 let _ = main.set_title(&format!("OVERLAY_X={ovl_x}  OVERLAY_Y={ovl_y}"));
                 let _ = overlay.emit("overlay-pos", (ovl_x, ovl_y));
             }
 
+            let icon_x = cfg.overlay_icons_x.unwrap_or(ICON_OVERLAY_X as i32);
+            let icon_y = cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32);
+            let icon_overlay = open_overlay(
+                app,
+                "overlay-icons",
+                "FF14 P4 Calculator Icon Overlay",
+                ICON_OVERLAY_WIDTH,
+                ICON_OVERLAY_HEIGHT,
+                icon_x,
+                icon_y,
+            )?;
+            if DEBUG {
+                let _ = icon_overlay.emit("overlay-icons-pos", (icon_x, icon_y));
+            }
+            if !parse_debuff_overlay(cfg.debuff_overlay) {
+                let _ = icon_overlay.hide();
+            }
+
             let main_hwnd = main.clone();
-            let overlay_hwnd = overlay.clone();
+            let overlay_hwnds = vec![overlay.clone(), icon_overlay.clone()];
             std::thread::spawn(move || {
                 // WebView2 child HWNDs appear after the host window; retry so they
                 // also get WS_EX_NOACTIVATE + WM_MOUSEACTIVATE subclassing.
@@ -267,17 +338,20 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                     let main_for_thread = main_hwnd.clone();
                     let main_w = main_hwnd.clone();
-                    let overlay_for_thread = overlay_hwnd.clone();
-                    let overlay_w = overlay_hwnd.clone();
                     let _ = main_for_thread.run_on_main_thread(move || {
                         win32::force_topmost_window(&main_w);
                         win32::prevent_activation(&main_w);
                         win32::enable_titlebar_shade(&main_w);
                     });
-                    let _ = overlay_for_thread.run_on_main_thread(move || {
-                        win32::apply_overlay_style(&overlay_w);
-                        win32::prevent_activation(&overlay_w);
-                    });
+                    for ovl in &overlay_hwnds {
+                        let overlay_for_thread = ovl.clone();
+                        let overlay_w = ovl.clone();
+                        let _ = overlay_for_thread.run_on_main_thread(move || {
+                            win32::apply_overlay_style(&overlay_w);
+                            win32::prevent_activation(&overlay_w);
+                            win32::sync_icon_overlay_visibility();
+                        });
+                    }
                 }
             });
 

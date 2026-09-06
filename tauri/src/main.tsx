@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import Overlay from "./Overlay";
+import IconOverlay from "./IconOverlay";
 import Preview from "./Preview";
 import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { applyCssVars } from "./constants";
@@ -19,14 +20,22 @@ document.getElementById("root")?.classList.add("h-full");
 
 let page: React.ReactNode;
 if (isTauri()) {
-  const overlay = getCurrentWindow().label === "overlay";
+  const label = getCurrentWindow().label;
+  const overlay = label === "overlay" || label === "overlay-icons";
   if (overlay) {
     document.documentElement.classList.add("bg-transparent");
     document.body.classList.add("bg-transparent");
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
   }
-  page = overlay ? <Overlay /> : <App />;
+  page =
+    label === "overlay" ? (
+      <Overlay />
+    ) : label === "overlay-icons" ? (
+      <IconOverlay />
+    ) : (
+      <App />
+    );
 } else {
   document.body.classList.add(
     "min-h-full",

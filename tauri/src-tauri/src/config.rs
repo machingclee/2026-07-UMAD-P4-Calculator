@@ -55,6 +55,10 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlay_y: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_icons_x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_icons_y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_x: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_y: Option<i32>,
@@ -71,6 +75,9 @@ pub struct Config {
     /// Extra space between overlay text lines, in CSS pixels. `0` keeps default line-height.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_gap: Option<i32>,
+    /// Show the speed / thunder icon overlay when the main window is expanded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debuff_overlay: Option<bool>,
     /// Sparse overrides for UI / overlay strings. Missing keys use built-in defaults.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub labels: HashMap<String, String>,
