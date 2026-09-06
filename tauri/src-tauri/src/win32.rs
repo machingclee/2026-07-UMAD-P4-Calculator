@@ -14,7 +14,7 @@ mod imp {
     use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use tauri::WebviewWindow;
+    use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
     type HWND = *mut c_void;
     type HANDLE = *mut c_void;
@@ -73,6 +73,7 @@ mod imp {
     const MAIN_TITLE: &str = "FF14 P4 Calculator";
 
     static MUTEX_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static APP_HANDLE: Mutex<Option<AppHandle>> = Mutex::new(None);
     /// Previous WndProcs for HWNDs subclassed to return `MA_NOACTIVATE`.
     static OLD_WNDPROCS: Mutex<Option<HashMap<isize, isize>>> = Mutex::new(None);
     static MAIN_HWND: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -378,6 +379,13 @@ mod imp {
         (text + borders + 24).max(80)
     }
 
+    /// Width used only while shaded to a title chip (does not change expanded min-size).
+    fn shaded_title_width(hwnd: HWND) -> i32 {
+        let text = measure_title_width(hwnd);
+        let borders = horiz_border_width(hwnd).max(0);
+        (text + borders + 56).max(80)
+    }
+
     fn frame_changed(hwnd: HWND) {
         unsafe {
             SetWindowPos(
@@ -536,13 +544,38 @@ mod imp {
             TITLEBAR_SHADED.store(true, Ordering::SeqCst);
             apply_compact_chrome(hwnd);
             let compact_h = titlebar_only_height(hwnd).max(shade_h);
-            let compact_w = compact_window_width(hwnd);
+            let compact_w = shaded_title_width(hwnd);
             let new_y = if from_bottom {
                 rect.bottom - compact_h
             } else {
                 rect.top
             };
             set_window_bounds(hwnd, rect.left, new_y, compact_w, compact_h);
+        }
+        notify_shade_changed();
+    }
+
+    fn notify_shade_changed() {
+        let expanded = !TITLEBAR_SHADED.load(Ordering::SeqCst);
+        let Ok(guard) = APP_HANDLE.lock() else {
+            return;
+        };
+        let Some(app) = guard.as_ref() else {
+            return;
+        };
+        let _ = app.emit("app-expanded", expanded);
+        apply_icon_overlay_visibility(app);
+    }
+
+    fn apply_icon_overlay_visibility(app: &AppHandle) {
+        let expanded = !TITLEBAR_SHADED.load(Ordering::SeqCst);
+        let enabled = crate::config::load(app).debuff_overlay.unwrap_or(true);
+        if let Some(w) = app.get_webview_window("overlay-icons") {
+            if expanded && enabled {
+                let _ = w.show();
+            } else {
+                let _ = w.hide();
+            }
         }
     }
 
@@ -725,6 +758,22 @@ mod imp {
         1
     }
 
+    pub fn set_app_handle(app: AppHandle) {
+        if let Ok(mut guard) = APP_HANDLE.lock() {
+            *guard = Some(app);
+        }
+    }
+
+    pub fn sync_icon_overlay_visibility() {
+        let Ok(guard) = APP_HANDLE.lock() else {
+            return;
+        };
+        let Some(app) = guard.as_ref() else {
+            return;
+        };
+        apply_icon_overlay_visibility(app);
+    }
+
     pub fn is_titlebar_shaded() -> bool {
         TITLEBAR_SHADED.load(Ordering::SeqCst)
     }
@@ -892,6 +941,10 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use tauri::WebviewWindow;
+
+    pub fn set_app_handle(_app: tauri::AppHandle) {}
+
+    pub fn sync_icon_overlay_visibility() {}
 
     pub fn already_running() -> bool {
         false
