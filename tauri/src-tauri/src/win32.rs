@@ -523,6 +523,54 @@ mod imp {
         }
     }
 
+    /// Resize the overlay in one `SetWindowPos` so bottom-anchored height
+    /// changes cannot persist an intermediate top-left.
+    pub fn set_inner_size_anchored(
+        window: &WebviewWindow,
+        inner_w: i32,
+        inner_h: i32,
+        anchor_bottom: bool,
+    ) {
+        let Some(hwnd) = hwnd_of(window) else {
+            return;
+        };
+        if inner_w <= 0 || inner_h <= 0 {
+            return;
+        }
+        let Some(outer) = window_rect(hwnd) else {
+            return;
+        };
+        let mut client = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if unsafe { GetClientRect(hwnd, &mut client) } == 0 {
+            return;
+        }
+        let client_w = client.right - client.left;
+        let client_h = client.bottom - client.top;
+        let frame_w = if client_w > 0 {
+            ((outer.right - outer.left) - client_w).max(0)
+        } else {
+            0
+        };
+        let frame_h = if client_h > 0 {
+            ((outer.bottom - outer.top) - client_h).max(0)
+        } else {
+            0
+        };
+        let width = inner_w + frame_w;
+        let height = inner_h + frame_h;
+        let y = if anchor_bottom {
+            outer.bottom - height
+        } else {
+            outer.top
+        };
+        set_window_bounds(hwnd, outer.left, y, width, height);
+    }
+
     fn start_shaded_press(hwnd: HWND, lparam: isize) {
         let pt = lparam_point(lparam);
         SHADE_PRESS_X.store(pt.x, Ordering::SeqCst);
@@ -1046,6 +1094,14 @@ mod imp {
     pub fn set_shade_from_bottom(_from_bottom: bool) {}
 
     pub fn ensure_main_on_screen(_window: &WebviewWindow) {}
+
+    pub fn set_inner_size_anchored(
+        _window: &WebviewWindow,
+        _inner_w: i32,
+        _inner_h: i32,
+        _anchor_bottom: bool,
+    ) {
+    }
 }
 
 pub use imp::*;

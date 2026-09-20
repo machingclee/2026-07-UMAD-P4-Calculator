@@ -11,11 +11,15 @@ use constants::{
     ICON_OVERLAY_Y, OVERLAY_HEIGHT, OVERLAY_HINT, OVERLAY_WIDTH, OVERLAY_X, OVERLAY_Y,
 };
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
+
+/// 變更 drag mode: only then may overlay-icons persist its position.
+static OVERLAY_DRAG: AtomicBool = AtomicBool::new(false);
 
 fn overlay_hint(labels: &HashMap<String, String>) -> String {
     match labels.get("overlayHint") {
@@ -128,6 +132,7 @@ fn set_labels(app: tauri::AppHandle, labels: HashMap<String, String>) {
 
 #[tauri::command]
 fn set_input_mode(app: tauri::AppHandle, enabled: bool) {
+    OVERLAY_DRAG.store(enabled, Ordering::SeqCst);
     if let Some(main) = app.get_webview_window("main") {
         win32::set_input_enabled(&main, enabled);
     }
@@ -168,18 +173,59 @@ fn persist_moved(window: &tauri::Window, x: i32, y: i32) {
             c.overlay_y = Some(y);
         });
     } else if label == "overlay-icons" {
-        let bottom = window
+        // Only 變更-drag may rewrite the saved Y; hug-to-content must not.
+        if !OVERLAY_DRAG.load(Ordering::SeqCst) {
+            return;
+        }
+        if !window.is_visible().unwrap_or(false) {
+            return;
+        }
+        let height = window
             .outer_size()
             .ok()
-            .map(|size| y.saturating_add(size.height as i32));
+            .map(|s| s.height as i32)
+            .unwrap_or(0);
+        if height < 16 {
+            return;
+        }
         config::update(app, |c| {
             c.overlay_icons_x = Some(x);
             c.overlay_icons_y = Some(y);
-            if let Some(value) = bottom {
-                c.overlay_icons_bottom = Some(value);
-            }
+            c.overlay_icons_bottom = Some(y.saturating_add(height));
         });
     }
+}
+
+#[tauri::command]
+fn resize_overlay_anchored(
+    window: tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+    anchor_bottom: bool,
+) {
+    if window.label() != "overlay" && window.label() != "overlay-icons" {
+        return;
+    }
+    let width = width.max(1.0);
+    let height = height.max(1.0);
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let phys_w = (width * scale).round() as i32;
+    let phys_h = (height * scale).round() as i32;
+    if cfg!(windows) {
+        win32::set_inner_size_anchored(&window, phys_w, phys_h, anchor_bottom);
+        return;
+    }
+    let old_pos = window.outer_position().ok();
+    let old_size = window.outer_size().ok();
+    if anchor_bottom {
+        if let (Some(pos), Some(old)) = (old_pos, old_size) {
+            let dy = old.height as i32 - phys_h;
+            if dy != 0 {
+                let _ = window.set_position(PhysicalPosition::new(pos.x, pos.y + dy));
+            }
+        }
+    }
+    let _ = window.set_size(LogicalSize::new(width, height));
 }
 
 fn open_overlay(
@@ -205,6 +251,8 @@ fn open_overlay(
         .focusable(false)
         .visible(true)
         .build()?;
+    win32::apply_overlay_style(&win);
+    win32::prevent_activation(&win);
     let _ = win.set_position(PhysicalPosition::new(x, y));
     Ok(win)
 }
@@ -271,6 +319,7 @@ pub fn run() {
             set_debuff_overlay,
             get_original_menu,
             set_original_menu,
+            resize_overlay_anchored,
             postnamazu::get_postnamazu_port,
             postnamazu::set_postnamazu_port,
             postnamazu::get_postnamazu_enabled,
@@ -361,11 +410,7 @@ pub fn run() {
             }
 
             let icon_x = cfg.overlay_icons_x.unwrap_or(ICON_OVERLAY_X as i32);
-            let icon_h = ICON_OVERLAY_HEIGHT as i32;
-            let icon_y = match cfg.overlay_icons_bottom {
-                Some(bottom) => bottom - icon_h,
-                None => cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32),
-            };
+            let icon_y = cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32);
             let icon_overlay = open_overlay(
                 app,
                 "overlay-icons",
