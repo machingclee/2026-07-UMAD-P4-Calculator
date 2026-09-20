@@ -146,13 +146,52 @@ fn r2_step_hint<'a>(state: &State, labels: &'a Labels) -> &'a str {
     }
 }
 
-/// Same as python/main.py `calculate`.
-pub fn calculate(state: &State) -> String {
-    calculate_labeled(state, &Labels::new())
+struct RoundBlock {
+    /// Round title (R1 / R2); echoed as a separator, not numbered.
+    headers: Vec<String>,
+    /// Indented overlay lines for this round.
+    body: Vec<String>,
 }
 
-pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
-    let mut lines: Vec<String> = Vec::new();
+fn has_action(state: &State, rnd: &str) -> bool {
+    ["speed", "water", "thunder"]
+        .iter()
+        .any(|key| !get(state, &format!("{rnd}_{key}")).is_empty())
+}
+
+fn action_excluded(state: &State, rnd: &str, key: &str) -> bool {
+    let other = if rnd == "round1" { "round2" } else { "round1" };
+    !get(state, &format!("{other}_{key}")).is_empty()
+}
+
+/// Same numbering as the stepped overlay wizard (1–6 input, 7 = done).
+pub fn wizard_step(state: &State) -> u8 {
+    if get(state, "round1_tf").is_empty() {
+        return 1;
+    }
+    if get(state, "fire").is_empty() && get(state, "water").is_empty() {
+        return 2;
+    }
+    if !has_action(state, "round1") {
+        return 3;
+    }
+    if get(state, "round2_tf").is_empty() {
+        return 4;
+    }
+    if get(state, "fire").is_empty() || get(state, "water").is_empty() {
+        return 5;
+    }
+    let round2_locked = action_excluded(state, "round2", "speed")
+        && action_excluded(state, "round2", "water")
+        && action_excluded(state, "round2", "thunder");
+    if !has_action(state, "round2") && !round2_locked {
+        return 6;
+    }
+    7
+}
+
+fn round_blocks(state: &State, labels: &Labels) -> Vec<RoundBlock> {
+    let mut blocks = Vec::new();
     for (rnd, prefix) in [("round1", "1"), ("round2", "2")] {
         let tf = get(state, &format!("{rnd}_tf"));
         let eye = if tf == "真" {
@@ -168,13 +207,14 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
         }
         acts = with_share_if_no_out(acts, labels);
         let suffix = label(labels, "recordTf", "記錄真假");
-        let mut block = Vec::new();
+        let mut headers = Vec::new();
+        let mut body = Vec::new();
         let round_label = if rnd == "round1" {
             label(labels, "r1", "R1")
         } else {
             label(labels, "r2", "R2")
         };
-        push_label(&mut block, round_label, "");
+        push_label(&mut headers, round_label, "");
         if !acts.is_empty() {
             let acts_text = acts.join("  ");
             let line = if rnd == "round2" {
@@ -182,16 +222,16 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
             } else {
                 acts_text
             };
-            push_label(&mut block, &line, "  ");
+            push_label(&mut body, &line, "  ");
         } else if rnd == "round2" {
-            push_label(&mut block, suffix, "  ");
+            push_label(&mut body, suffix, "  ");
         }
         let eye_line = if rnd == "round1" {
             join_parts(&[eye, suffix])
         } else {
             eye.to_string()
         };
-        push_label(&mut block, &eye_line, "  ");
+        push_label(&mut body, &eye_line, "  ");
         if rnd == "round1" {
             let f_val = get(state, "fire");
             if !f_val.is_empty() {
@@ -200,7 +240,7 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
                 } else {
                     label(labels, "moon", "放月環")
                 };
-                push_label(&mut block, place, "  ");
+                push_label(&mut body, place, "  ");
             }
         } else {
             let w_val = get(state, "water");
@@ -216,16 +256,135 @@ pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
                     .filter(|s| !s.is_empty())
                     .collect();
                 if !parts.is_empty() {
-                    push_label(&mut block, &parts.join(" "), "  ");
+                    push_label(&mut body, &parts.join(" "), "  ");
                 }
             }
         }
-        if block.is_empty() {
+        if headers.is_empty() && body.is_empty() {
             continue;
         }
-        lines.extend(block);
+        blocks.push(RoundBlock { headers, body });
+    }
+    blocks
+}
+
+/// Same as python/main.py `calculate`.
+pub fn calculate(state: &State) -> String {
+    calculate_labeled(state, &Labels::new())
+}
+
+pub fn calculate_labeled(state: &State, labels: &Labels) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for block in round_blocks(state, labels) {
+        lines.extend(block.headers);
+        lines.extend(block.body);
     }
     lines.join("\n")
+}
+
+/// `/e` payloads for a completed calculator: `(0)` hint, then each round as
+/// `/e R1` / `/e (1) …` then `/e R2` / `/e (2) …`.
+pub fn echo_commands(state: &State, labels: &Labels) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(parts) = lines_from_label(label(labels, "overlayHint", "金反，紫同")) {
+        for part in parts {
+            let part = part.trim();
+            if !part.is_empty() {
+                out.push(format!("/e (0) {part}"));
+            }
+        }
+    }
+    for (i, block) in round_blocks(state, labels).into_iter().enumerate() {
+        for header in block.headers {
+            let header = header.trim();
+            if !header.is_empty() {
+                out.push(format!("/e {header}"));
+            }
+        }
+        let n = i + 1;
+        for line in block.body {
+            let line = line.trim();
+            if !line.is_empty() {
+                out.push(format!("/e ({n}) {line}"));
+            }
+        }
+    }
+    out
+}
+
+fn collect_slot(text: &str) -> String {
+    let mut tmp = Vec::new();
+    push_label(&mut tmp, text, "");
+    tmp.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Six TTS slots, in overlay order, skipping hint `(0)` and R1/R2 separators:
+/// `(1)` 行動 / 眼 / 鋼鐵月環, then `(2)` 行動 / 眼 / 鋼鐵月環.
+pub fn tts_slots(state: &State, labels: &Labels) -> [String; 6] {
+    let mut slots = [(); 6].map(|_| String::new());
+    for (round_i, (rnd, prefix)) in [("round1", "1"), ("round2", "2")].into_iter().enumerate() {
+        let tf = get(state, &format!("{rnd}_tf"));
+        let eye = if tf == "真" {
+            label(labels, "lookAway", "背眼")
+        } else if !tf.is_empty() {
+            label(labels, "lookAt", "望眼")
+        } else {
+            ""
+        };
+        let mut acts = actions(state, prefix, labels);
+        if tf.is_empty() && acts.is_empty() {
+            continue;
+        }
+        acts = with_share_if_no_out(acts, labels);
+        let suffix = label(labels, "recordTf", "記錄真假");
+        let acts_line = if !acts.is_empty() {
+            let acts_text = acts.join("  ");
+            if rnd == "round2" {
+                join_parts(&[&acts_text, suffix])
+            } else {
+                acts_text
+            }
+        } else if rnd == "round2" {
+            suffix.to_string()
+        } else {
+            String::new()
+        };
+        let eye_line = if rnd == "round1" {
+            join_parts(&[eye, suffix])
+        } else {
+            eye.to_string()
+        };
+        let place_line = if rnd == "round1" {
+            let f_val = get(state, "fire");
+            if f_val.is_empty() {
+                String::new()
+            } else if f_val == "真" {
+                label(labels, "steel", "放鋼鐵").to_string()
+            } else {
+                label(labels, "moon", "放月環").to_string()
+            }
+        } else {
+            let w_val = get(state, "water");
+            if w_val.is_empty() {
+                String::new()
+            } else {
+                if w_val == "真" {
+                    label(labels, "moon", "放月環").to_string()
+                } else {
+                    label(labels, "steel", "放鋼鐵").to_string()
+                }
+            }
+        };
+        let base = round_i * 3;
+        slots[base] = collect_slot(&acts_line);
+        slots[base + 1] = collect_slot(&eye_line);
+        slots[base + 2] = collect_slot(&place_line);
+    }
+    slots
 }
 
 #[cfg(test)]
@@ -529,5 +688,74 @@ mod tests {
             &labels,
         );
         assert_eq!(text, "R1\n  分攤  不動\n  背眼\nR2\n  分攤  不動\n  背眼");
+    }
+
+    #[test]
+    fn wizard_reaches_step_7_after_round2_action() {
+        let mut state = s(&[
+            ("round1_tf", "真"),
+            ("fire", "真"),
+            ("water", "真"),
+            ("round1_speed", "1 ⏩"),
+            ("round2_tf", "？"),
+        ]);
+        assert_eq!(wizard_step(&state), 6);
+        state.insert("round2_water".into(), "2 💧".into());
+        assert_eq!(wizard_step(&state), 7);
+    }
+
+    #[test]
+    fn echo_commands_number_hint_and_rounds() {
+        let cmds = echo_commands(
+            &s(&[
+                ("round1_tf", "真"),
+                ("round2_tf", "？"),
+                ("fire", "真"),
+                ("water", "真"),
+                ("round1_speed", "1 ⏩"),
+                ("round2_water", "2 💧"),
+            ]),
+            &Labels::new(),
+        );
+        assert_eq!(
+            cmds,
+            vec![
+                "/e (0) 金反，紫同",
+                "/e R1",
+                "/e (1) 分攤  不動",
+                "/e (1) 背眼  記錄真假",
+                "/e (1) 放鋼鐵",
+                "/e R2",
+                "/e (2) 水出  記錄真假",
+                "/e (2) 望眼",
+                "/e (2) 放月環 都不踩",
+            ]
+        );
+    }
+
+    #[test]
+    fn tts_slots_are_six_body_lines() {
+        let slots = tts_slots(
+            &s(&[
+                ("round1_tf", "真"),
+                ("round2_tf", "？"),
+                ("fire", "真"),
+                ("water", "真"),
+                ("round1_speed", "1 ⏩"),
+                ("round2_water", "2 💧"),
+            ]),
+            &Labels::new(),
+        );
+        assert_eq!(
+            slots,
+            [
+                "分攤  不動".to_string(),
+                "背眼  記錄真假".to_string(),
+                "放鋼鐵".to_string(),
+                "水出  記錄真假".to_string(),
+                "望眼".to_string(),
+                "放月環".to_string(),
+            ]
+        );
     }
 }

@@ -7,6 +7,7 @@ export const DEBUG = false; // show overlay X/Y in the main window title when dr
 
 export const APP_WIDTH = 360; // main window width
 export const APP_HEIGHT = 250; // main window height
+export const SETTINGS_APP_HEIGHT = 520; // 變更 settings
 export const COMPACT_APP_WIDTH = 180; // expanded + Original Menu off (清除 + 變更)
 export const COMPACT_APP_HEIGHT = 52;
 // Overlay hugs its text. Native first-frame size/position: src-tauri/src/constants.rs.

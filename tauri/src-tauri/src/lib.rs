@@ -1,6 +1,8 @@
+mod act_overlay;
 mod calculate;
 mod config;
 mod constants;
+mod postnamazu;
 mod win32;
 
 use calculate::State;
@@ -50,6 +52,8 @@ fn calculate_text(
         }
     };
     let _ = app.emit("overlay-text", &text);
+    act_overlay::update_snapshot(&state, &labels);
+    postnamazu::maybe_echo_overlay(&app, &state, &labels);
     text
 }
 
@@ -267,6 +271,24 @@ pub fn run() {
             set_debuff_overlay,
             get_original_menu,
             set_original_menu,
+            postnamazu::get_postnamazu_port,
+            postnamazu::set_postnamazu_port,
+            postnamazu::get_postnamazu_enabled,
+            postnamazu::set_postnamazu_enabled,
+            postnamazu::postnamazu_command,
+            postnamazu::postnamazu_echo,
+            act_overlay::get_act_tts_enabled,
+            act_overlay::set_act_tts_enabled,
+            act_overlay::get_overlay_ws_port,
+            act_overlay::set_overlay_ws_port,
+            act_overlay::get_log_regex,
+            act_overlay::set_log_regex,
+            act_overlay::get_tts_delays_ms,
+            act_overlay::set_tts_delays_ms,
+            act_overlay::act_tts_say,
+            act_overlay::act_tts_connected,
+            act_overlay::cancel_scheduled_tts,
+            act_overlay::act_tts_trigger,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Moved(pos) => {
@@ -313,11 +335,13 @@ pub fn run() {
             if let (Some(x), Some(y)) = (cfg.app_x, cfg.app_y) {
                 let _ = main.set_position(PhysicalPosition::new(x, y));
             }
+            win32::ensure_main_on_screen(&main);
             let _ = main.set_focusable(false);
             win32::set_shade_from_bottom(parse_shade_edge(cfg.shade_edge.as_deref()) == "bottom");
             win32::force_topmost_window(&main);
             win32::prevent_activation(&main);
             win32::enable_titlebar_shade(&main);
+            act_overlay::start(app.handle().clone());
             let _ = main.show();
 
             let ovl_x = cfg.overlay_x.unwrap_or(OVERLAY_X as i32);

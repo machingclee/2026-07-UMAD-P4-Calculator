@@ -47,6 +47,33 @@ import {
   persistOriginalMenuLocal,
 } from "./originalMenu";
 import {
+  DEFAULT_POSTNAMAZU_PORT,
+  loadPostnamazuEnabledLocal,
+  loadPostnamazuPortLocal,
+  parsePostnamazuEnabled,
+  parsePostnamazuPort,
+  persistPostnamazuEnabledLocal,
+  persistPostnamazuPortLocal,
+} from "./postnamazu";
+import {
+  DEFAULT_LOG_REGEX,
+  DEFAULT_OVERLAY_WS_PORT,
+  loadActTtsEnabledLocal,
+  loadLogRegexLocal,
+  loadOverlayWsPortLocal,
+  loadTtsDelaysLocal,
+  parseActTtsEnabled,
+  parseLogRegex,
+  parseOverlayWsPort,
+  parseTtsDelayMs,
+  parseTtsDelays,
+  persistActTtsEnabledLocal,
+  persistLogRegexLocal,
+  persistOverlayWsPortLocal,
+  persistTtsDelaysLocal,
+  TTS_SLOT_LABELS,
+} from "./actTts";
+import {
   ACTION_BADGE_FONT_SIZE,
   ACTION_BADGE_TOP,
   ACTION_BTN_GAP,
@@ -419,6 +446,65 @@ function RoundBlock({
   );
 }
 
+function delayInputClass() {
+  return "box-border w-[5.5em] min-w-0 rounded-sm border border-[#adadad] bg-[var(--btn-bg)] px-1.5 py-0.5 font-[inherit] text-[length:var(--font-size)] text-black outline-none select-text focus:border-[#0078d7] dark:border-[#555] dark:text-white";
+}
+
+const GROUP_BODY =
+  "border-[#c0c0c0] pl-6 dark:border-[#555]";
+
+function TtsDelayEditor({
+  delays,
+  onChange,
+}: {
+  delays: number[];
+  onChange: (index: number, ms: number) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 font-bold">TTS 延遲</div>
+      <p className="mb-2 text-[11px] leading-snug text-[#555] dark:text-[#aaa]">
+        從日誌正則命中起算，各行獨立播放（略過 (0) 與分隔線）。
+      </p>
+      <div className={GROUP_BODY}>
+        <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+          <thead>
+            <tr className="text-[11px] text-[#555] dark:text-[#aaa]">
+              <th className="w-[7.5em] py-0.5 pr-2 font-normal" />
+              <th className="w-[6.5em] py-0.5 text-right font-normal">ms</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TTS_SLOT_LABELS.map((label, i) => (
+              <tr key={label} className="border-b border-[#c0c0c0] dark:border-[#444]">
+                <td className="w-[7.5em] whitespace-nowrap py-1 pr-2 align-middle text-[#555] dark:text-[#aaa]">
+                  {label}
+                </td>
+                <td className="w-[6.5em] py-1 text-right align-middle">
+                  <input
+                    type="number"
+                    min={0}
+                    max={120000}
+                    value={delays[i] ?? 0}
+                    aria-label={`${label} ms`}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={delayInputClass()}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      onChange(i, raw === "" ? 0 : parseTtsDelayMs(raw));
+                    }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function LabelsEditor({
   labels,
   onChange,
@@ -433,31 +519,34 @@ function LabelsEditor({
       {LABEL_GROUPS.map((group) => (
         <div key={group.title}>
           <div className="mb-1 font-bold">{group.title}</div>
-          <p className="mb-1 text-[11px] leading-snug text-[#555] dark:text-[#aaa]">
+          <p className="mb-2 text-[11px] leading-snug text-[#555] dark:text-[#aaa]">
             留空會刪除該行。若要空行，請輸入 \n
           </p>
-          <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
-            <tbody>
-              {group.keys.map((key) => (
-                <tr key={key} className="border-b border-[#c0c0c0] dark:border-[#444]">
-                  <td className="w-[7.5em] whitespace-nowrap py-1 pr-2 align-middle text-[#555] dark:text-[#aaa]">
-                    {DEFAULT_LABELS[key]}
-                  </td>
-                  <td className="py-1">
-                    <input
-                      type="text"
-                      value={labels[key]}
-                      placeholder={DEFAULT_LABELS[key]}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="box-border w-full min-w-0 rounded-sm border border-[#adadad] bg-[var(--btn-bg)] px-1.5 py-0.5 font-[inherit] text-[length:var(--font-size)] text-black outline-none select-text focus:border-[#0078d7] dark:border-[#555] dark:text-white"
-                      onChange={(e) => onChange(key, e.target.value)}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className={GROUP_BODY}>
+
+            <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+              <tbody>
+                {group.keys.map((key) => (
+                  <tr key={key} className="border-b border-[#c0c0c0] dark:border-[#444]">
+                    <td className="w-[7.5em] whitespace-nowrap py-1 pr-2 align-middle text-[#555] dark:text-[#aaa]">
+                      {DEFAULT_LABELS[key]}
+                    </td>
+                    <td className="py-1">
+                      <input
+                        type="text"
+                        value={labels[key]}
+                        placeholder={DEFAULT_LABELS[key]}
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="box-border w-full min-w-0 rounded-sm border border-[#adadad] bg-[var(--btn-bg)] px-1.5 py-0.5 font-[inherit] text-[length:var(--font-size)] text-black outline-none select-text focus:border-[#0078d7] dark:border-[#555] dark:text-white"
+                        onChange={(e) => onChange(key, e.target.value)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ))}
       <div>
@@ -478,6 +567,15 @@ function App() {
   const [state, setState] = useState<State>(EMPTY_STATE);
   const [changeMode, setChangeMode] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"general" | "custom">("general");
+  const [postnamazuEnabled, setPostnamazuEnabled] = useState<boolean | null>(null);
+  const [postnamazuPort, setPostnamazuPort] = useState<number | null>(null);
+  const [postnamazuTest, setPostnamazuTest] = useState<string | null>(null);
+  const [actTtsEnabled, setActTtsEnabled] = useState<boolean | null>(null);
+  const [overlayWsPort, setOverlayWsPort] = useState<number | null>(null);
+  const [logRegex, setLogRegex] = useState<string | null>(null);
+  const [ttsDelays, setTtsDelays] = useState<number[] | null>(null);
+  const [actTtsTest, setActTtsTest] = useState<string | null>(null);
+  const [regexTest, setRegexTest] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme | null>(null);
   const [shadeEdge, setShadeEdge] = useState<ShadeEdge | null>(null);
   const [lineGap, setLineGap] = useState<number | null>(null);
@@ -488,6 +586,12 @@ function App() {
 
   const setField = useCallback((key: string, value: string) => {
     setState((prev) => ({ ...prev, [key]: value }));
+  }, []);
+  const clearCalculator = useCallback(() => {
+    setState({ ...EMPTY_STATE });
+    if (isTauri()) {
+      invoke("cancel_scheduled_tts").catch(() => { });
+    }
   }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -512,6 +616,24 @@ function App() {
       invoke<boolean>("get_original_menu")
         .then((value) => setOriginalMenu(parseOriginalMenu(value)))
         .catch(() => setOriginalMenu(true));
+      invoke<boolean>("get_postnamazu_enabled")
+        .then((value) => setPostnamazuEnabled(parsePostnamazuEnabled(value)))
+        .catch(() => setPostnamazuEnabled(false));
+      invoke<number>("get_postnamazu_port")
+        .then((value) => setPostnamazuPort(parsePostnamazuPort(value)))
+        .catch(() => setPostnamazuPort(DEFAULT_POSTNAMAZU_PORT));
+      invoke<boolean>("get_act_tts_enabled")
+        .then((value) => setActTtsEnabled(parseActTtsEnabled(value)))
+        .catch(() => setActTtsEnabled(true));
+      invoke<number>("get_overlay_ws_port")
+        .then((value) => setOverlayWsPort(parseOverlayWsPort(value)))
+        .catch(() => setOverlayWsPort(DEFAULT_OVERLAY_WS_PORT));
+      invoke<string>("get_log_regex")
+        .then((value) => setLogRegex(parseLogRegex(value)))
+        .catch(() => setLogRegex(DEFAULT_LOG_REGEX));
+      invoke<number[]>("get_tts_delays_ms")
+        .then((value) => setTtsDelays(parseTtsDelays(value)))
+        .catch(() => setTtsDelays(parseTtsDelays(null)));
       invoke<Partial<Record<string, string>>>("get_labels")
         .then((value) => {
           setLabels(mergeLabels(value));
@@ -525,6 +647,12 @@ function App() {
     setLineGap(loadLineGapLocal());
     setDebuffOverlay(loadDebuffOverlayLocal());
     setOriginalMenu(loadOriginalMenuLocal());
+    setPostnamazuEnabled(loadPostnamazuEnabledLocal());
+    setPostnamazuPort(loadPostnamazuPortLocal());
+    setActTtsEnabled(loadActTtsEnabledLocal());
+    setOverlayWsPort(loadOverlayWsPortLocal());
+    setLogRegex(loadLogRegexLocal());
+    setTtsDelays(loadTtsDelaysLocal());
     setLabels(loadLabelsLocal());
     setLabelsReady(true);
   }, []);
@@ -582,9 +710,64 @@ function App() {
   }, [originalMenu]);
 
   useEffect(() => {
+    if (postnamazuEnabled === null) return;
+    if (isTauri()) {
+      invoke("set_postnamazu_enabled", { enabled: postnamazuEnabled }).catch(() => { });
+      return;
+    }
+    persistPostnamazuEnabledLocal(postnamazuEnabled);
+  }, [postnamazuEnabled]);
+
+  useEffect(() => {
+    if (postnamazuPort === null) return;
+    if (isTauri()) {
+      invoke("set_postnamazu_port", { port: postnamazuPort }).catch(() => { });
+      return;
+    }
+    persistPostnamazuPortLocal(postnamazuPort);
+  }, [postnamazuPort]);
+
+  useEffect(() => {
+    if (actTtsEnabled === null) return;
+    if (isTauri()) {
+      invoke("set_act_tts_enabled", { enabled: actTtsEnabled }).catch(() => { });
+      return;
+    }
+    persistActTtsEnabledLocal(actTtsEnabled);
+  }, [actTtsEnabled]);
+
+  useEffect(() => {
+    if (overlayWsPort === null) return;
+    if (isTauri()) {
+      invoke("set_overlay_ws_port", { port: overlayWsPort }).catch(() => { });
+      return;
+    }
+    persistOverlayWsPortLocal(overlayWsPort);
+  }, [overlayWsPort]);
+
+  useEffect(() => {
+    if (logRegex === null) return;
+    if (isTauri()) {
+      invoke("set_log_regex", { pattern: logRegex }).catch(() => { });
+      return;
+    }
+    persistLogRegexLocal(logRegex);
+  }, [logRegex]);
+
+  useEffect(() => {
+    if (ttsDelays === null) return;
+    if (isTauri()) {
+      invoke("set_tts_delays_ms", { delays: ttsDelays }).catch(() => { });
+      return;
+    }
+    persistTtsDelaysLocal(ttsDelays);
+  }, [ttsDelays]);
+
+  useEffect(() => {
     if (originalMenu === null) return;
     void applyMainWindowLayout({
       compact: !changeMode && originalMenu === false,
+      settings: changeMode,
       shadeFromBottom: (shadeEdge ?? "bottom") === "bottom",
     });
   }, [changeMode, originalMenu, shadeEdge]);
@@ -724,7 +907,17 @@ function App() {
                   },
                 }}
               >
-                <div className="p-1">
+                <div className="flex flex-col gap-3 p-1">
+                  <TtsDelayEditor
+                    delays={ttsDelays ?? parseTtsDelays(null)}
+                    onChange={(index, ms) =>
+                      setTtsDelays((prev) => {
+                        const next = parseTtsDelays(prev);
+                        next[index] = ms;
+                        return next;
+                      })
+                    }
+                  />
                   <LabelsEditor
                     labels={labels}
                     onChange={(key, value) =>
@@ -747,143 +940,393 @@ function App() {
                   },
                 }}
               >
-                <div className="p-1">
-                  <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
-                    <thead>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <th className="py-1 pr-3 font-bold">選項</th>
-                        <th className="py-1 font-bold">設定</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
-                        <td className="py-1.5">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className={actionBtnClass(theme !== "dark")}
-                              tabIndex={-1}
-                              aria-pressed={theme !== "dark"}
-                              onClick={() => setTheme("light")}
-                            >
-                              淺色
-                            </button>
-                            <button
-                              type="button"
-                              className={actionBtnClass(theme === "dark")}
-                              tabIndex={-1}
-                              aria-pressed={theme === "dark"}
-                              onClick={() => setTheme("dark")}
-                            >
-                              深色
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
-                        <td className="py-1.5">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className={actionBtnClass(edge === "top")}
-                              tabIndex={-1}
-                              aria-pressed={edge === "top"}
-                              onClick={() => setShadeEdge("top")}
-                            >
-                              向上
-                            </button>
-                            <button
-                              type="button"
-                              className={actionBtnClass(edge === "bottom")}
-                              tabIndex={-1}
-                              aria-pressed={edge === "bottom"}
-                              onClick={() => setShadeEdge("bottom")}
-                            >
-                              向下
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <td className="whitespace-nowrap py-1.5 pr-3">行距</td>
-                        <td className="py-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="range"
-                              min={0}
-                              max={MAX_LINE_GAP}
-                              step={1}
-                              value={lineGap ?? DEFAULT_LINE_GAP}
-                              tabIndex={-1}
-                              className="min-w-0 flex-1 accent-[#0078d7]"
-                              onChange={(e) => setLineGap(parseLineGap(e.target.value))}
-                            />
-                            <span className="w-[3.2em] shrink-0 text-[#555] dark:text-[#aaa]">
-                              {lineGap ?? DEFAULT_LINE_GAP} px
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
-                        <td className="py-1.5 text-[#555] dark:text-[#aaa]">
-                          可拖曳調整位置
-                        </td>
-                      </tr>
-                      <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
-                        <td className="whitespace-nowrap py-1.5 pr-3">Show Steps Overlay</td>
-                        <td className="py-1.5">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className={actionBtnClass(debuffOverlay !== false)}
-                              tabIndex={-1}
-                              aria-pressed={debuffOverlay !== false}
-                              onClick={() => setDebuffOverlay(true)}
-                            >
-                              開
-                            </button>
-                            <button
-                              type="button"
-                              className={actionBtnClass(debuffOverlay === false)}
-                              tabIndex={-1}
-                              aria-pressed={debuffOverlay === false}
-                              onClick={() => setDebuffOverlay(false)}
-                            >
-                              關
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="whitespace-nowrap py-1.5 pr-3">Show Original Menu</td>
-                        <td className="py-1.5">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className={actionBtnClass(originalMenu !== false)}
-                              tabIndex={-1}
-                              aria-pressed={originalMenu !== false}
-                              onClick={() => setOriginalMenu(true)}
-                            >
-                              開
-                            </button>
-                            <button
-                              type="button"
-                              className={actionBtnClass(originalMenu === false)}
-                              tabIndex={-1}
-                              aria-pressed={originalMenu === false}
-                              onClick={() => setOriginalMenu(false)}
-                            >
-                              關
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div className="flex flex-col gap-3 p-1">
+                  <div>
+                    <div className="mb-1 font-bold">偏好</div>
+                    <div className={GROUP_BODY}>
+                      <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+                        <tbody>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">主題</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(theme !== "dark")}
+                                  tabIndex={-1}
+                                  aria-pressed={theme !== "dark"}
+                                  onClick={() => setTheme("light")}
+                                >
+                                  淺色
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(theme === "dark")}
+                                  tabIndex={-1}
+                                  aria-pressed={theme === "dark"}
+                                  onClick={() => setTheme("dark")}
+                                >
+                                  深色
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">收合方向</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(edge === "top")}
+                                  tabIndex={-1}
+                                  aria-pressed={edge === "top"}
+                                  onClick={() => setShadeEdge("top")}
+                                >
+                                  向上
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(edge === "bottom")}
+                                  tabIndex={-1}
+                                  aria-pressed={edge === "bottom"}
+                                  onClick={() => setShadeEdge("bottom")}
+                                >
+                                  向下
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">行距</td>
+                            <td className="py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={MAX_LINE_GAP}
+                                  step={1}
+                                  value={lineGap ?? DEFAULT_LINE_GAP}
+                                  tabIndex={-1}
+                                  className="min-w-0 flex-1 accent-[#0078d7]"
+                                  onChange={(e) => setLineGap(parseLineGap(e.target.value))}
+                                />
+                                <span className="w-[3.2em] shrink-0 text-[#555] dark:text-[#aaa]">
+                                  {lineGap ?? DEFAULT_LINE_GAP} px
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-0">文字 Overlay</td>
+                            <td className="py-1.5 text-[#555] dark:text-[#aaa]">
+                              可拖曳調整位置
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">Show Steps Overlay</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(debuffOverlay !== false)}
+                                  tabIndex={-1}
+                                  aria-pressed={debuffOverlay !== false}
+                                  onClick={() => setDebuffOverlay(true)}
+                                >
+                                  開
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(debuffOverlay === false)}
+                                  tabIndex={-1}
+                                  aria-pressed={debuffOverlay === false}
+                                  onClick={() => setDebuffOverlay(false)}
+                                >
+                                  關
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">Show Original Menu</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(originalMenu !== false)}
+                                  tabIndex={-1}
+                                  aria-pressed={originalMenu !== false}
+                                  onClick={() => setOriginalMenu(true)}
+                                >
+                                  開
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(originalMenu === false)}
+                                  tabIndex={-1}
+                                  aria-pressed={originalMenu === false}
+                                  onClick={() => setOriginalMenu(false)}
+                                >
+                                  關
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">PostNamazu /e</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(postnamazuEnabled === true)}
+                                  tabIndex={-1}
+                                  aria-pressed={postnamazuEnabled === true}
+                                  onClick={() => setPostnamazuEnabled(true)}
+                                >
+                                  開
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(postnamazuEnabled !== true)}
+                                  tabIndex={-1}
+                                  aria-pressed={postnamazuEnabled !== true}
+                                  onClick={() => setPostnamazuEnabled(false)}
+                                >
+                                  關
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">ACT TTS</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(actTtsEnabled !== false)}
+                                  tabIndex={-1}
+                                  aria-pressed={actTtsEnabled !== false}
+                                  onClick={() => setActTtsEnabled(true)}
+                                >
+                                  開
+                                </button>
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(actTtsEnabled === false)}
+                                  tabIndex={-1}
+                                  aria-pressed={actTtsEnabled === false}
+                                  onClick={() => setActTtsEnabled(false)}
+                                >
+                                  關
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="whitespace-nowrap py-1.5 pr-3">日誌正則</td>
+                            <td className="py-1.5">
+                              <input
+                                type="text"
+                                value={logRegex ?? DEFAULT_LOG_REGEX}
+                                placeholder={DEFAULT_LOG_REGEX}
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="box-border w-full min-w-0 rounded-sm border border-[#adadad] bg-[var(--btn-bg)] px-1.5 py-0.5 font-[inherit] text-[length:var(--font-size)] text-black outline-none select-text focus:border-[#0078d7] dark:border-[#555] dark:text-white"
+                                onChange={(e) => setLogRegex(e.target.value)}
+                              />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 font-bold">測試</div>
+                    <div className={GROUP_BODY}>
+                      <table className="w-full border-collapse text-left text-[length:var(--font-size)]">
+                        <tbody>
+                          {postnamazuEnabled === true ? (
+                            <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                              <td className="whitespace-nowrap py-1.5 pr-3">/e</td>
+                              <td className="py-1.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={actionBtnClass(false)}
+                                    tabIndex={-1}
+                                    disabled={!isTauri()}
+                                    onClick={() => {
+                                      if (!isTauri()) return;
+                                      setPostnamazuTest("…");
+                                      invoke("postnamazu_command", {
+                                        command: "command",
+                                        payload: "/e P4 Calculator",
+                                        port: postnamazuPort ?? DEFAULT_POSTNAMAZU_PORT,
+                                      })
+                                        .then(() => setPostnamazuTest("OK"))
+                                        .catch((err: unknown) =>
+                                          setPostnamazuTest(
+                                            typeof err === "string"
+                                              ? err
+                                              : err instanceof Error
+                                                ? err.message
+                                                : String(err),
+                                          ),
+                                        );
+                                    }}
+                                  >
+                                    測試
+                                  </button>
+                                  <span className="text-[#555] dark:text-[#aaa]">端口</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={65535}
+                                    value={postnamazuPort ?? DEFAULT_POSTNAMAZU_PORT}
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    className={delayInputClass()}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      if (raw === "") {
+                                        setPostnamazuPort(DEFAULT_POSTNAMAZU_PORT);
+                                        return;
+                                      }
+                                      setPostnamazuPort(parsePostnamazuPort(raw));
+                                    }}
+                                  />
+                                  {postnamazuTest ? (
+                                    <span className="min-w-0 text-[#555] dark:text-[#aaa]">
+                                      {postnamazuTest}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                          <tr className="border-b border-[#c0c0c0] dark:border-[#444]">
+                            <td className="whitespace-nowrap py-1.5 pr-3">TTS</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(false)}
+                                  tabIndex={-1}
+                                  disabled={!isTauri()}
+                                  onClick={() => {
+                                    if (!isTauri()) return;
+                                    setActTtsTest("…");
+                                    invoke("act_tts_say", { text: "TTS 測試成功" })
+                                      .then(() => setActTtsTest("應已播放"))
+                                      .catch((err: unknown) =>
+                                        setActTtsTest(
+                                          typeof err === "string"
+                                            ? err
+                                            : err instanceof Error
+                                              ? err.message
+                                              : String(err),
+                                        ),
+                                      );
+                                  }}
+                                >
+                                  播放
+                                </button>
+                                <span className="text-[#555] dark:text-[#aaa]">端口</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={65535}
+                                  value={overlayWsPort ?? DEFAULT_OVERLAY_WS_PORT}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  className={delayInputClass()}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    if (raw === "") {
+                                      setOverlayWsPort(DEFAULT_OVERLAY_WS_PORT);
+                                      return;
+                                    }
+                                    setOverlayWsPort(parseOverlayWsPort(raw));
+                                  }}
+                                />
+                                {actTtsTest ? (
+                                  <span className="min-w-0 text-[#555] dark:text-[#aaa]">
+                                    {actTtsTest}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="whitespace-nowrap py-1.5 pr-3">正則</td>
+                            <td className="py-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  className={actionBtnClass(false)}
+                                  tabIndex={-1}
+                                  disabled={!isTauri()}
+                                  onClick={() => {
+                                    if (!isTauri()) return;
+                                    setRegexTest("…");
+                                    invoke<string>("act_tts_trigger")
+                                      .then((msg) => setRegexTest(msg))
+                                      .catch((err: unknown) =>
+                                        setRegexTest(
+                                          typeof err === "string"
+                                            ? err
+                                            : err instanceof Error
+                                              ? err.message
+                                              : String(err),
+                                        ),
+                                      );
+                                  }}
+                                >
+                                  觸發
+                                </button>
+                                {regexTest ? (
+                                  <span className="min-w-0 text-[#555] dark:text-[#aaa]">
+                                    {regexTest}
+                                  </span>
+                                ) : (
+                                  <span className="min-w-0 text-[#555] dark:text-[#aaa]">
+                                    模擬日誌命中
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="whitespace-nowrap py-1.5 pr-3">排程</td>
+                            <td className="py-1.5">
+                              <button
+                                type="button"
+                                className={actionBtnClass(false)}
+                                tabIndex={-1}
+                                disabled={!isTauri()}
+                                onClick={() => {
+                                  if (!isTauri()) return;
+                                  invoke("cancel_scheduled_tts")
+                                    .then(() => setActTtsTest("已停止並清除排程"))
+                                    .catch((err: unknown) =>
+                                      setActTtsTest(
+                                        typeof err === "string"
+                                          ? err
+                                          : err instanceof Error
+                                            ? err.message
+                                            : String(err),
+                                      ),
+                                    );
+                                }}
+                              >
+                                停止並清除全部排程
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </OverlayScrollbarsComponent>
             )}
@@ -904,7 +1347,7 @@ function App() {
             type="button"
             className={actionBtnClass(false)}
             tabIndex={-1}
-            onClick={() => setState({ ...EMPTY_STATE })}
+            onClick={clearCalculator}
           >
             清除
           </button>
@@ -960,7 +1403,7 @@ function App() {
               type="button"
               className={actionBtnClass(false)}
               tabIndex={-1}
-              onClick={() => setState({ ...EMPTY_STATE })}
+              onClick={clearCalculator}
             >
               清除
             </button>

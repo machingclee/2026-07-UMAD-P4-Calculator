@@ -62,6 +62,11 @@ mod imp {
     const SC_MINIMIZE: u32 = 0xF020;
     const SC_RESTORE: u32 = 0xF120;
     const SPI_GETNONCLIENTMETRICS: u32 = 0x0029;
+    const SPI_GETWORKAREA: u32 = 0x0030;
+    const SM_XVIRTUALSCREEN: i32 = 76;
+    const SM_YVIRTUALSCREEN: i32 = 77;
+    const SM_CXVIRTUALSCREEN: i32 = 78;
+    const SM_CYVIRTUALSCREEN: i32 = 79;
     const SM_CXDRAG: i32 = 68;
     const SM_CYDRAG: i32 = 69;
     const LF_FACESIZE: usize = 32;
@@ -440,6 +445,67 @@ mod imp {
         frame_changed(hwnd);
     }
 
+    fn virtual_screen() -> RECT {
+        unsafe {
+            let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            let w = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
+            let h = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(1);
+            RECT {
+                left: x,
+                top: y,
+                right: x + w,
+                bottom: y + h,
+            }
+        }
+    }
+
+    fn primary_work_area() -> RECT {
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        let ok = unsafe {
+            SystemParametersInfoW(
+                SPI_GETWORKAREA,
+                0,
+                &mut rect as *mut RECT as *mut c_void,
+                0,
+            )
+        };
+        if ok != 0 && rect.right > rect.left && rect.bottom > rect.top {
+            rect
+        } else {
+            virtual_screen()
+        }
+    }
+
+    fn rects_overlap(a: &RECT, b: &RECT, min_w: i32, min_h: i32) -> bool {
+        let left = a.left.max(b.left);
+        let top = a.top.max(b.top);
+        let right = a.right.min(b.right);
+        let bottom = a.bottom.min(b.bottom);
+        right - left >= min_w && bottom - top >= min_h
+    }
+
+    fn ensure_hwnd_on_screen(hwnd: HWND) {
+        let Some(rect) = window_rect(hwnd) else {
+            return;
+        };
+        let vs = virtual_screen();
+        if rects_overlap(&rect, &vs, 80, 16) {
+            return;
+        }
+        let width = (rect.right - rect.left).max(80);
+        let height = (rect.bottom - rect.top).max(32);
+        let area = primary_work_area();
+        let x = area.left + ((area.right - area.left - width) / 2).max(0);
+        let y = area.top + ((area.bottom - area.top - height) / 2).max(0);
+        set_window_bounds(hwnd, x, y, width, height);
+    }
+
     fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) {
         if width <= 0 || height <= 0 {
             return;
@@ -552,6 +618,7 @@ mod imp {
             };
             set_window_bounds(hwnd, rect.left, new_y, compact_w, compact_h);
         }
+        ensure_hwnd_on_screen(hwnd);
         notify_shade_changed();
     }
 
@@ -858,6 +925,8 @@ mod imp {
                 let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
                 if !hwnd.is_null() {
                     ShowWindow(hwnd, SW_RESTORE);
+                    SendMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE as usize, 0);
+                    ensure_hwnd_on_screen(hwnd);
                     let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
                     SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !WS_EX_NOACTIVATE);
                     if SetForegroundWindow(hwnd) == 0 {
@@ -881,6 +950,12 @@ mod imp {
             }
         }
         false
+    }
+
+    pub fn ensure_main_on_screen(window: &WebviewWindow) {
+        if let Some(hwnd) = hwnd_of(window) {
+            ensure_hwnd_on_screen(hwnd);
+        }
     }
 
     /// Keep the main window above the game. Do not set `WS_EX_TOOLWINDOW` —
@@ -969,6 +1044,8 @@ mod imp {
     pub fn enable_titlebar_shade(_window: &WebviewWindow) {}
 
     pub fn set_shade_from_bottom(_from_bottom: bool) {}
+
+    pub fn ensure_main_on_screen(_window: &WebviewWindow) {}
 }
 
 pub use imp::*;

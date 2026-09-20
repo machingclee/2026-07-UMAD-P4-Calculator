@@ -1,6 +1,12 @@
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { APP_HEIGHT, APP_WIDTH, COMPACT_APP_HEIGHT, COMPACT_APP_WIDTH } from "./constants";
+import {
+  APP_HEIGHT,
+  APP_WIDTH,
+  COMPACT_APP_HEIGHT,
+  COMPACT_APP_WIDTH,
+  SETTINGS_APP_HEIGHT,
+} from "./constants";
 import { isTauri } from "./env";
 
 /** Apply size knobs from constants.ts. Overlay size follows content instead. */
@@ -13,16 +19,21 @@ export function applyNativeWindowSize(): Promise<void> {
   return Promise.resolve();
 }
 
-/** Full calculator vs 清除+變更 bar. Bottom-anchored when shade edge is bottom. */
+/** Full calculator vs 清除+變更 bar vs 變更 settings. Bottom-anchored when shade edge is bottom. */
 export async function applyMainWindowLayout(opts: {
   compact: boolean;
+  settings: boolean;
   shadeFromBottom: boolean;
 }): Promise<void> {
   if (!isTauri()) return;
   const win = getCurrentWindow();
   if (win.label !== "main") return;
   const width = opts.compact ? COMPACT_APP_WIDTH : APP_WIDTH;
-  const height = opts.compact ? COMPACT_APP_HEIGHT : APP_HEIGHT;
+  const height = opts.compact
+    ? COMPACT_APP_HEIGHT
+    : opts.settings
+      ? SETTINGS_APP_HEIGHT
+      : APP_HEIGHT;
   const prev = opts.shadeFromBottom
     ? await Promise.all([win.outerPosition(), win.outerSize()]).catch(() => null)
     : null;
