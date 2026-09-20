@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -80,20 +81,15 @@ async function fitOverlayToElementNow(
   const height = Math.max(1, Math.ceil(Math.max(el.scrollHeight, el.offsetHeight, rect.height)) + 1);
   if (width === lastOverlayW && height === lastOverlayH) return;
 
-  const prev =
-    anchor === "bottom"
-      ? await Promise.all([win.outerPosition(), win.outerSize()]).catch(() => null)
-      : null;
-
-  await win.setSize(new LogicalSize(width, height)).catch(() => {});
+  if (anchor === "bottom") {
+    await invoke("resize_overlay_anchored", {
+      width,
+      height,
+      anchorBottom: true,
+    }).catch(() => {});
+  } else {
+    await win.setSize(new LogicalSize(width, height)).catch(() => {});
+  }
   lastOverlayW = width;
   lastOverlayH = height;
-
-  if (!prev) return;
-  const [pos, oldSize] = prev;
-  const newSize = await win.outerSize().catch(() => null);
-  if (!newSize) return;
-  const dy = oldSize.height - newSize.height;
-  if (dy === 0) return;
-  await win.setPosition(new PhysicalPosition(pos.x, pos.y + dy)).catch(() => {});
 }

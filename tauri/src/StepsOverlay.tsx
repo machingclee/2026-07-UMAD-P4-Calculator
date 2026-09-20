@@ -29,6 +29,7 @@ export default function StepsOverlay() {
   const [enabled, setEnabled] = useState(true);
   const [calc, setCalc] = useState<State>(EMPTY_STATE);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const initialFit = useRef(true);
   const step = wizardStep(calc);
 
   useEffect(() => {
@@ -106,8 +107,11 @@ export default function StepsOverlay() {
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el) return;
+    if (!expanded || !enabled) return;
     const apply = () => {
-      void fitOverlayToElement(el, { anchor: "bottom" });
+      const anchor = initialFit.current || dragEnabled ? "top" : "bottom";
+      initialFit.current = false;
+      void fitOverlayToElement(el, { anchor });
     };
     apply();
     const ro = new ResizeObserver(apply);
