@@ -84,6 +84,30 @@ pub struct Config {
     /// Show the full calculator menu when the main window is expanded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_menu: Option<bool>,
+    /// POST overlay lines as `/e` through PostNamazu's HTTP listener.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postnamazu_enabled: Option<bool>,
+    /// PostNamazu HTTP port (ACT plugin UI, default 2019).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postnamazu_port: Option<u16>,
+    /// Speak calculator `(1)` / `(2)` lines via OverlayPlugin ACT TTS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub act_tts_enabled: Option<bool>,
+    /// OverlayPlugin WSServer port (default 10501).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_ws_port: Option<u16>,
+    /// Regex matched against OverlayPlugin `LogLine` text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_regex: Option<String>,
+    /// Six delays (ms from the matching log line) for the six TTS slots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_delays_ms: Option<Vec<u32>>,
+    /// Legacy: applied to all three `(1)` slots if `tts_delays_ms` is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_delay_1_ms: Option<u32>,
+    /// Legacy: applied to all three `(2)` slots if `tts_delays_ms` is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_delay_2_ms: Option<u32>,
     /// Sparse overrides for UI / overlay strings. Missing keys use built-in defaults.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub labels: HashMap<String, String>,
