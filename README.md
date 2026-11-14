@@ -42,4 +42,4 @@ https://github.com/user-attachments/assets/fed83eb5-5859-4319-8bae-b74bb2523ce5
 #### 2026-09-20
 
 - Add TTS for mechanics reporting https://github.com/machingclee/2026-07-UMAD-P4-Calculator/releases/tag/v0.0.8
-- Add `PostNamazu` support, for now it only `/e` messages, but it already servers as a decent trigger for many other application, left as study in the future.
+- Add `PostNamazu` support, for now it only `/e` messages, but it already serves as a decent trigger for many other application, left as study in the future.
