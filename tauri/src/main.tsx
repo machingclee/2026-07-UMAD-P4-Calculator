@@ -28,6 +28,11 @@ if (isTauri()) {
     document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
   }
+  if (label === "overlay") {
+    // ClearType glyphs have no alpha and composite away on a transparent window.
+    document.documentElement.style.setProperty("-webkit-font-smoothing", "antialiased");
+    document.body.style.setProperty("-webkit-font-smoothing", "antialiased");
+  }
   page =
     label === "overlay" ? (
       <Overlay />

@@ -20,8 +20,31 @@ export function applyNativeWindowSize(): Promise<void> {
   return Promise.resolve();
 }
 
+/**
+ * One layout at a time. Each call reads the window's position and size, resizes,
+ * then shifts by the height difference so the bottom edge stays put; two of them
+ * in flight together each read the size the other is about to replace, and the
+ * window walks by a panel height per unbalanced pair. `變更` toggled a few times
+ * in a row was enough to park it near the screen edge.
+ */
+let layoutQueue: Promise<void> = Promise.resolve();
+
 /** Full calculator vs 清除+變更 bar vs 變更 settings. Bottom-anchored when shade edge is bottom. */
-export async function applyMainWindowLayout(opts: {
+export function applyMainWindowLayout(opts: {
+  compact: boolean;
+  settings: boolean;
+  shadeFromBottom: boolean;
+}): Promise<void> {
+  const run = () => applyMainWindowLayoutNow(opts);
+  const next = layoutQueue.then(run, run);
+  layoutQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+async function applyMainWindowLayoutNow(opts: {
   compact: boolean;
   settings: boolean;
   shadeFromBottom: boolean;
@@ -51,6 +74,15 @@ export async function applyMainWindowLayout(opts: {
 let lastOverlayW = 0;
 let lastOverlayH = 0;
 let fitQueue: Promise<void> = Promise.resolve();
+/**
+ * Bumped on every request. A queued fit that is no longer the newest is
+ * dropped: it measures the element when it finally runs, long after the DOM may
+ * have changed, so an old request with the old anchor would resize the *new*
+ * content with the wrong edge. Entering `變更` queued a bottom-anchored fit from
+ * the smaller pre-drag layout; it then grew the taller sample upward and moved
+ * the window, which is the drift that got saved as a new position each cycle.
+ */
+let fitToken = 0;
 
 const OVERLAY_WINDOW_LABELS = new Set(["overlay", "overlay-icons"]);
 
@@ -59,7 +91,10 @@ export function fitOverlayToElement(
   el: HTMLElement,
   options?: { anchor?: "top" | "bottom" },
 ): Promise<void> {
-  const run = () => fitOverlayToElementNow(el, options?.anchor ?? "top");
+  const token = ++fitToken;
+  const anchor = options?.anchor ?? "top";
+  const run = () =>
+    token === fitToken ? fitOverlayToElementNow(el, anchor) : Promise.resolve();
   const next = fitQueue.then(run, run);
   fitQueue = next.then(
     () => undefined,

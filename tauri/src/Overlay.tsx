@@ -1,11 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   BG_COLOR,
   DEBUG,
-  DRAG_BG,
   FILL_COLOR,
   OVERLAY_FONT_FAMILY,
   OVERLAY_FONT_SIZE_PT,
@@ -20,11 +18,14 @@ import {
   OVERLAY_TEXT_EVENT,
   isTauri,
 } from "./env";
+import { overlayText } from "./calculate";
+import { DEFAULT_LABELS, mergeLabels, type Labels } from "./labels";
 import {
   DEFAULT_LINE_GAP,
   loadLineGapLocal,
   parseLineGap,
 } from "./lineGap";
+import { DRAG_PREVIEW_STATE } from "./state";
 import { fitOverlayToElement } from "./windowSize";
 
 function strokeShadow(): string {
@@ -42,20 +43,33 @@ export default function Overlay() {
   const boxRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [dragEnabled, setDragEnabled] = useState(false);
+  const [labels, setLabels] = useState<Labels>(DEFAULT_LABELS);
   const [lineGap, setLineGap] = useState(DEFAULT_LINE_GAP);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const shadow = useMemo(strokeShadow, []);
 
+  const body = dragEnabled ? overlayText(DRAG_PREVIEW_STATE, labels) : text;
   const display = DEBUG && pos
-    ? text
-      ? `${text}\n\nOVL_X=${pos.x} OVL_Y=${pos.y}`
+    ? body
+      ? `${body}\n\nOVL_X=${pos.x} OVL_Y=${pos.y}`
       : `OVL_X=${pos.x} OVL_Y=${pos.y}`
-    : text;
+    : body;
 
   useEffect(() => {
     if (isTauri()) {
+      let fromEvent = false;
       const unlisten = listen<string>("overlay-text", (event) => {
+        fromEvent = true;
         setText(event.payload ?? "");
+      });
+      // Release webview mounts after the first emit. Read the stored text
+      // once the listener is active so that emit is not lost.
+      void unlisten.then(() => {
+        invoke<string>("get_overlay_text")
+          .then((value) => {
+            if (!fromEvent) setText(value ?? "");
+          })
+          .catch(() => {});
       });
       return () => {
         unlisten.then((fn) => fn()).catch(() => {});
@@ -79,6 +93,13 @@ export default function Overlay() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [display, dragEnabled, lineGap]);
+
+  useEffect(() => {
+    if (!dragEnabled || !isTauri()) return;
+    invoke<Record<string, string>>("get_labels")
+      .then((value) => setLabels(mergeLabels(value)))
+      .catch(() => {});
+  }, [dragEnabled]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -118,9 +139,11 @@ export default function Overlay() {
 
   useEffect(() => {
     if (!isTauri()) return;
-    getCurrentWindow()
-      .setIgnoreCursorEvents(!dragEnabled)
-      .catch(() => {});
+    // Not setIgnoreCursorEvents: that sets WS_EX_LAYERED, which current
+    // Windows composites at alpha 0 and hides this text.
+    invoke("set_overlay_click_through", { clickThrough: !dragEnabled }).catch(
+      () => {},
+    );
   }, [dragEnabled]);
 
   useEffect(() => {
@@ -157,19 +180,20 @@ export default function Overlay() {
       {display || dragEnabled ? (
         <div
           className={`box-border flex flex-col text-left leading-[1.35] ${
-            dragEnabled
-              ? "min-h-[1.4em] min-w-[4em] cursor-move rounded px-3.5 py-2.5"
-              : ""
+            dragEnabled ? "cursor-move" : ""
           }`}
-          {...(dragEnabled ? { "data-tauri-drag-region": true } : {})}
+          {...(dragEnabled ? { "data-tauri-drag-region": "deep" } : {})}
           style={{
             fontFamily: OVERLAY_FONT_FAMILY,
             fontSize: `${OVERLAY_FONT_SIZE_PT}pt`,
             fontWeight: OVERLAY_FONT_WEIGHT,
+            WebkitFontSmoothing: "antialiased",
             color: FILL_COLOR,
             textShadow: shadow,
-            background: dragEnabled ? DRAG_BG : undefined,
-            padding: dragEnabled ? undefined : strokePad,
+            WebkitTextStroke: dragEnabled ? `2px ${STROKE_COLOR}` : undefined,
+            paintOrder: dragEnabled ? "stroke fill" : undefined,
+            background: "transparent",
+            padding: strokePad,
             gap: lineGap,
           }}
         >

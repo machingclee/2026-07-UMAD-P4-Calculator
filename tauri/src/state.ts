@@ -17,6 +17,18 @@ export const EMPTY_STATE: State = {
   round2_thunder: "",
 };
 
+/** Shown only while 變更 is on, so the overlays have a selection to drag. Not saved. */
+export const DRAG_PREVIEW_STATE: State = {
+  ...EMPTY_STATE,
+  fire: "真",
+  water: "？",
+  thunder: "？",
+  round1_tf: "真",
+  round1_speed: "1 ⏩",
+  round2_tf: "？",
+  round2_water: "2 💧",
+};
+
 export function toggleValue(current: string, next: string): string {
   return current === next ? "" : next;
 }
