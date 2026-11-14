@@ -1,6 +1,6 @@
 [package]
 name = "p4-calculator"
-version = "0.1.0"
+version = "1.0.0"
 description = "FF14 UMAD P4 mechanics calculator"
 authors = ["you"]
 edition = "2021"

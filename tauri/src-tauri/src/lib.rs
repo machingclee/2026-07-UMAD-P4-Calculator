@@ -12,6 +12,7 @@ use constants::{
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{
     Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
@@ -20,6 +21,8 @@ use tauri_plugin_opener::OpenerExt;
 
 /// 變更 drag mode: only then may overlay-icons persist its position.
 static OVERLAY_DRAG: AtomicBool = AtomicBool::new(false);
+/// Last mechanic text. The release overlay can mount after the first emit.
+static LAST_OVERLAY_TEXT: Mutex<String> = Mutex::new(String::new());
 
 fn overlay_hint(labels: &HashMap<String, String>) -> String {
     match labels.get("overlayHint") {
@@ -55,7 +58,13 @@ fn calculate_text(
             }
         }
     };
-    let _ = app.emit("overlay-text", &text);
+    // 變更 publishes its own sample. A late calculate must not clear that text.
+    if !OVERLAY_DRAG.load(Ordering::SeqCst) {
+        if let Ok(mut guard) = LAST_OVERLAY_TEXT.lock() {
+            *guard = text.clone();
+        }
+        let _ = app.emit("overlay-text", &text);
+    }
     act_overlay::update_snapshot(&state, &labels);
     postnamazu::maybe_echo_overlay(&app, &state, &labels);
     text
@@ -136,6 +145,11 @@ fn set_input_mode(app: tauri::AppHandle, enabled: bool) {
     if let Some(main) = app.get_webview_window("main") {
         win32::set_input_enabled(&main, enabled);
     }
+    // 變更 must receive clicks on the text overlay and leave the blur path,
+    // so the sample glyphs are visible and can be dragged.
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        win32::set_overlay_click_through(&overlay, !enabled);
+    }
 }
 
 /// Open a file in VS Code via the vscode:// URL scheme.
@@ -168,6 +182,11 @@ fn persist_moved(window: &tauri::Window, x: i32, y: i32) {
             });
         }
     } else if label == "overlay" {
+        // A minimized or mid-shutdown window reports -32000, -32000. Storing
+        // that pair is what put the release text overlay off-screen.
+        if !win32::position_on_screen(x, y) {
+            return;
+        }
         config::update(app, |c| {
             c.overlay_x = Some(x);
             c.overlay_y = Some(y);
@@ -194,6 +213,14 @@ fn persist_moved(window: &tauri::Window, x: i32, y: i32) {
             c.overlay_icons_bottom = Some(y.saturating_add(height));
         });
     }
+}
+
+#[tauri::command]
+fn set_overlay_click_through(window: tauri::WebviewWindow, click_through: bool) {
+    if window.label() != "overlay" {
+        return;
+    }
+    win32::set_overlay_click_through(&window, click_through);
 }
 
 #[tauri::command]
@@ -228,6 +255,33 @@ fn resize_overlay_anchored(
     let _ = window.set_size(LogicalSize::new(width, height));
 }
 
+#[tauri::command]
+fn get_overlay_text() -> String {
+    LAST_OVERLAY_TEXT
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default()
+}
+
+/// Saved overlay position, or the default when the saved pair is not on any
+/// monitor. A minimized window persists `-32000, -32000`, and an overlay created
+/// at that pair is invisible, so the pair has to be rejected before it reaches
+/// `open_overlay`.
+fn overlay_start_position(
+    saved_x: Option<i32>,
+    saved_y: Option<i32>,
+    default_x: i32,
+    default_y: i32,
+) -> (i32, i32) {
+    let x = saved_x.unwrap_or(default_x);
+    let y = saved_y.unwrap_or(default_y);
+    if win32::position_on_screen(x, y) {
+        (x, y)
+    } else {
+        (default_x, default_y)
+    }
+}
+
 fn open_overlay(
     app: &mut tauri::App,
     label: &str,
@@ -237,6 +291,8 @@ fn open_overlay(
     x: i32,
     y: i32,
 ) -> tauri::Result<tauri::WebviewWindow> {
+    // Same WebView2 profile as the main window. A private profile loads
+    // localhost in dev, but the release build's tauri.localhost page stays blank.
     let win = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title(title)
         .inner_size(width, height)
@@ -304,6 +360,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             calculate_text,
+            get_overlay_text,
             get_theme,
             set_theme,
             get_shade_edge,
@@ -320,6 +377,7 @@ pub fn run() {
             get_original_menu,
             set_original_menu,
             resize_overlay_anchored,
+            set_overlay_click_through,
             postnamazu::get_postnamazu_port,
             postnamazu::set_postnamazu_port,
             postnamazu::get_postnamazu_enabled,
@@ -393,8 +451,12 @@ pub fn run() {
             act_overlay::start(app.handle().clone());
             let _ = main.show();
 
-            let ovl_x = cfg.overlay_x.unwrap_or(OVERLAY_X as i32);
-            let ovl_y = cfg.overlay_y.unwrap_or(OVERLAY_Y as i32);
+            let (ovl_x, ovl_y) = overlay_start_position(
+                cfg.overlay_x,
+                cfg.overlay_y,
+                OVERLAY_X as i32,
+                OVERLAY_Y as i32,
+            );
             let overlay = open_overlay(
                 app,
                 "overlay",
@@ -409,8 +471,27 @@ pub fn run() {
                 let _ = overlay.emit("overlay-pos", (ovl_x, ovl_y));
             }
 
-            let icon_x = cfg.overlay_icons_x.unwrap_or(ICON_OVERLAY_X as i32);
-            let icon_y = cfg.overlay_icons_y.unwrap_or(ICON_OVERLAY_Y as i32);
+            let (icon_x, icon_y) = overlay_start_position(
+                cfg.overlay_icons_x,
+                cfg.overlay_icons_y,
+                ICON_OVERLAY_X as i32,
+                ICON_OVERLAY_Y as i32,
+            );
+            // The step overlay hugs its content upward from a fixed bottom edge,
+            // so the saved bottom is what has to be restored. Placing it by the
+            // saved top instead made the card jump every time the wizard's height
+            // differed between launches.
+            let icon_y = match cfg.overlay_icons_bottom {
+                Some(bottom)
+                    if win32::position_on_screen(
+                        icon_x,
+                        bottom - ICON_OVERLAY_HEIGHT as i32,
+                    ) =>
+                {
+                    bottom - ICON_OVERLAY_HEIGHT as i32
+                }
+                _ => icon_y,
+            };
             let icon_overlay = open_overlay(
                 app,
                 "overlay-icons",
@@ -452,7 +533,6 @@ pub fn run() {
                     }
                 }
             });
-
             Ok(())
         })
         .run(tauri::generate_context!())

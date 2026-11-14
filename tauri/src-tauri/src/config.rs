@@ -146,7 +146,11 @@ pub fn config_path(app: &AppHandle) -> PathBuf {
 
 pub fn load(app: &AppHandle) -> Config {
     match fs::read_to_string(config_path(app)) {
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        // Strip a UTF-8 BOM. PowerShell's `Set-Content -Encoding UTF8` writes
+        // one, `serde_json` rejects it, and the fallback below then hands back
+        // defaults that the next `update` saves over the real file — which
+        // silently drops every stored label.
+        Ok(raw) => serde_json::from_str(raw.trim_start_matches('\u{feff}')).unwrap_or_default(),
         Err(_) => Config::default(),
     }
 }

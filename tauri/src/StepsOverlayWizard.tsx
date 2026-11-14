@@ -371,9 +371,18 @@ export function StepsOverlayWizard({
   const locked = dragEnabled;
   return (
     <div
-      className={`box-border flex flex-col gap-1.5 ${dragEnabled ? "cursor-move rounded px-3.5 py-2.5" : "rounded px-2 py-1.5"
-        }`}
-      {...(dragEnabled ? { "data-tauri-drag-region": true } : {})}
+      className={`box-border flex flex-col gap-1.5 ${
+        dragEnabled
+          // The whole card is the drag handle while 變更 is on. Without this the
+          // only draggable pixels are the padding: Tauri starts a drag only when
+          // the press lands on the element carrying `data-tauri-drag-region`,
+          // and it refuses outright when the press lands on a clickable element
+          // such as one of the choice buttons. The wizard is `locked` here, so
+          // dropping pointer events for the children costs nothing.
+          ? "cursor-move rounded px-3.5 py-2.5 [&_*]:pointer-events-none"
+          : "rounded px-2 py-1.5"
+      }`}
+      {...(dragEnabled ? { "data-tauri-drag-region": "deep" } : {})}
       style={{ background: dragEnabled ? DRAG_BG : "transparent" }}
     >
       {step === 1 ? (

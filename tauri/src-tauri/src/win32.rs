@@ -33,8 +33,13 @@ mod imp {
     const WS_MAXIMIZEBOX: i32 = 0x0001_0000;
     const WS_CAPTION_BUTTONS: i32 = WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     const WS_EX_TOPMOST: i32 = 0x0000_0008;
+    const WS_EX_TRANSPARENT: i32 = 0x0000_0020;
     const WS_EX_TOOLWINDOW: i32 = 0x0000_0080;
+    const WS_EX_LAYERED: i32 = 0x0008_0000;
+    const WS_EX_NOREDIRECTIONBITMAP: i32 = 0x0020_0000;
     const WS_EX_NOACTIVATE: i32 = 0x0800_0000;
+    const DWM_BB_ENABLE: u32 = 0x0000_0001;
+    const DWM_BB_BLURREGION: u32 = 0x0000_0002;
     const GWL_STYLE: i32 = -16;
     const GWL_EXSTYLE: i32 = -20;
     const GWLP_WNDPROC: i32 = -4;
@@ -94,6 +99,8 @@ mod imp {
     static SHADE_CAPTURING: AtomicBool = AtomicBool::new(false);
     static SHADE_PRESS_X: AtomicI32 = AtomicI32::new(0);
     static SHADE_PRESS_Y: AtomicI32 = AtomicI32::new(0);
+    /// Text overlay only. Click-through until the page asks to drag (變更).
+    static TEXT_OVERLAY_CLICK_THROUGH: AtomicBool = AtomicBool::new(true);
 
     #[repr(C)]
     struct RECT {
@@ -101,6 +108,14 @@ mod imp {
         top: i32,
         right: i32,
         bottom: i32,
+    }
+
+    #[repr(C)]
+    struct DWM_BLURBEHIND {
+        dwFlags: u32,
+        fEnable: i32,
+        hRgnBlur: *mut c_void,
+        fTransitionOnMaximized: i32,
     }
 
     #[repr(C)]
@@ -197,6 +212,7 @@ mod imp {
         fn GetClientRect(hWnd: HWND, lpRect: *mut RECT) -> i32;
         fn IsIconic(hWnd: HWND) -> i32;
         fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+        fn GetClassNameW(hWnd: HWND, lpClassName: *mut u16, nMaxCount: i32) -> i32;
         fn GetDC(hWnd: HWND) -> HDC;
         fn ReleaseDC(hWnd: HWND, hDC: HDC) -> i32;
         fn SendMessageW(hWnd: HWND, Msg: u32, wParam: usize, lParam: isize) -> isize;
@@ -216,6 +232,7 @@ mod imp {
 
     #[link(name = "gdi32")]
     unsafe extern "system" {
+        fn CreateRectRgn(x1: i32, y1: i32, x2: i32, y2: i32) -> HGDIOBJ;
         fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HGDIOBJ;
         fn SelectObject(hdc: HDC, h: HGDIOBJ) -> HGDIOBJ;
         fn DeleteObject(h: HGDIOBJ) -> i32;
@@ -225,6 +242,11 @@ mod imp {
             c: i32,
             psizl: *mut SIZE,
         ) -> i32;
+    }
+
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmEnableBlurBehindWindow(hWnd: HWND, pBlurBehind: *const DWM_BLURBEHIND) -> i32;
     }
 
     #[link(name = "kernel32")]
@@ -488,6 +510,20 @@ mod imp {
         let right = a.right.min(b.right);
         let bottom = a.bottom.min(b.bottom);
         right - left >= min_w && bottom - top >= min_h
+    }
+
+    /// Whether a 1×1 window at `x, y` would land on some monitor. A window that
+    /// is minimized (or was captured mid-shutdown) reports `-32000, -32000`, and
+    /// that pair reached `config.json` for the text overlay — an overlay created
+    /// there is invisible, which is the release-only blank overlay.
+    pub fn position_on_screen(x: i32, y: i32) -> bool {
+        let probe = RECT {
+            left: x,
+            top: y,
+            right: x + 1,
+            bottom: y + 1,
+        };
+        rects_overlap(&probe, &virtual_screen(), 1, 1)
     }
 
     fn ensure_hwnd_on_screen(hwnd: HWND) {
@@ -1037,7 +1073,13 @@ mod imp {
 
     /// Topmost overlay. Transparency is per-pixel WebView2 alpha, not a color-key:
     /// `SetLayeredWindowAttributes(LWA_COLORKEY)` would disable that and leave a black box.
+    ///
+    /// The text overlay takes a separate path. The step overlay stays on this one.
     pub fn apply_overlay_style(window: &WebviewWindow) {
+        if window.label() == "overlay" {
+            apply_text_overlay_style(window);
+            return;
+        }
         let Some(hwnd) = hwnd_of(window) else {
             return;
         };
@@ -1058,6 +1100,129 @@ mod imp {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
         }
+    }
+
+    /// WebView2 children are separate HWNDs, so the parent's click-through bit
+    /// does not cover them. Keep their layered bit; that is their own alpha.
+    fn set_text_click_through_bit(hwnd: HWND, click_through: bool) {
+        if hwnd.is_null() {
+            return;
+        }
+        unsafe {
+            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let next = if click_through {
+                ex | WS_EX_TRANSPARENT
+            } else {
+                ex & !WS_EX_TRANSPARENT
+            };
+            if next != ex {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, next);
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                );
+            }
+        }
+    }
+
+    /// The WebView2 host chain only: `WRY_WEBVIEW` and the two Chrome widget
+    /// hosts between it and Chromium's renderer.
+    ///
+    /// Chromium owns everything below those and already sets
+    /// `WS_EX_TRANSPARENT` on `Chrome_RenderWidgetHostHWND` and on the layered
+    /// `Intermediate D3D Window` it composites the page through. Clearing the
+    /// bit on that D3D child left the whole webview at alpha 0 — the DOM was
+    /// laid out and the window sized to it, but nothing painted. 變更 hit
+    /// exactly that because it is the only path that clears the bit.
+    fn is_webview_host_class(name: &str) -> bool {
+        name.eq_ignore_ascii_case("WRY_WEBVIEW")
+            || name.eq_ignore_ascii_case("Chrome_WidgetWin_0")
+            || name.eq_ignore_ascii_case("Chrome_WidgetWin_1")
+    }
+
+    unsafe extern "system" fn enum_text_click_through(hwnd: HWND, click_through: isize) -> i32 {
+        let mut buf = [0u16; 128];
+        let len = GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        let class = if len > 0 {
+            String::from_utf16_lossy(&buf[..len as usize])
+        } else {
+            String::new()
+        };
+        if is_webview_host_class(&class) {
+            set_text_click_through_bit(hwnd, click_through != 0);
+        }
+        1
+    }
+
+    /// Empty blur region Tao set at creation. `SWP_FRAMECHANGED` drops it, and
+    /// without it the text overlay paints an opaque sheet.
+    fn enable_text_overlay_transparency(hwnd: HWND) {
+        unsafe {
+            let region = CreateRectRgn(0, 0, -1, -1);
+            let blur = DWM_BLURBEHIND {
+                dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                fEnable: 1,
+                hRgnBlur: region,
+                fTransitionOnMaximized: 0,
+            };
+            let _ = DwmEnableBlurBehindWindow(hwnd, &blur);
+            if !region.is_null() {
+                DeleteObject(region);
+            }
+        }
+    }
+
+    /// Text overlay only.
+    ///
+    /// Click-through needs `WS_EX_LAYERED | WS_EX_TRANSPARENT`. `LWA_ALPHA`
+    /// turns that into a solid black box, so it is not used. 變更 drag mode
+    /// clears both bits and stays on the blur-behind path, which is what
+    /// paints the sample glyphs.
+    fn apply_text_overlay_style(window: &WebviewWindow) {
+        let Some(hwnd) = hwnd_of(window) else {
+            return;
+        };
+        let click_through = TEXT_OVERLAY_CLICK_THROUGH.load(Ordering::SeqCst);
+        unsafe {
+            let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut next = ex | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            next &= !WS_EX_NOREDIRECTIONBITMAP;
+            if click_through {
+                next |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+            } else {
+                next &= !WS_EX_LAYERED;
+                next &= !WS_EX_TRANSPARENT;
+            }
+            SetWindowLongW(hwnd, GWL_EXSTYLE, next);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            );
+            enable_text_overlay_transparency(hwnd);
+            EnumChildWindows(
+                hwnd,
+                Some(enum_text_click_through),
+                if click_through { 1 } else { 0 },
+            );
+        }
+    }
+
+    pub fn set_overlay_click_through(window: &WebviewWindow, click_through: bool) {
+        if window.label() != "overlay" {
+            return;
+        }
+        TEXT_OVERLAY_CLICK_THROUGH.store(click_through, Ordering::SeqCst);
+        apply_text_overlay_style(window);
     }
 }
 
@@ -1080,6 +1245,12 @@ mod imp {
     pub fn force_topmost_window(_window: &WebviewWindow) {}
 
     pub fn apply_overlay_style(_window: &WebviewWindow) {}
+
+    pub fn set_overlay_click_through(_window: &WebviewWindow, _click_through: bool) {}
+
+    pub fn position_on_screen(_x: i32, _y: i32) -> bool {
+        true
+    }
 
     pub fn prevent_activation(_window: &WebviewWindow) {}
 

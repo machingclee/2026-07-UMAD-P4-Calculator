@@ -107,6 +107,7 @@ import {
   sparseLabels,
 } from "./labels";
 import {
+  DRAG_PREVIEW_STATE,
   EMPTY_STATE,
   State,
   isExcluded,
@@ -595,6 +596,8 @@ function App() {
   }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const changeModeRef = useRef(changeMode);
+  changeModeRef.current = changeMode;
 
   const fireColor = themeColor(theme, FIRE_COLOR, FIRE_COLOR_DARK);
   const waterColor = themeColor(theme, WATER_COLOR, WATER_COLOR_DARK);
@@ -764,11 +767,14 @@ function App() {
   }, [ttsDelays]);
 
   useEffect(() => {
-    if (originalMenu === null) return;
+    // Wait for the stored values instead of laying out against the "bottom"
+    // default: the first resize would anchor the wrong edge and the window would
+    // jump once the real value arrived.
+    if (originalMenu === null || shadeEdge === null) return;
     void applyMainWindowLayout({
       compact: !changeMode && originalMenu === false,
       settings: changeMode,
-      shadeFromBottom: (shadeEdge ?? "bottom") === "bottom",
+      shadeFromBottom: shadeEdge === "bottom",
     });
   }, [changeMode, originalMenu, shadeEdge]);
 
@@ -785,20 +791,48 @@ function App() {
   useEffect(() => {
     if (!labelsReady) return;
     const merged = mergeLabels(labels);
-    if (isTauri()) {
-      invoke("calculate_text", { state, labels: sparseLabels(merged) }).catch(() => { });
-      return;
+    let cancelled = false;
+    // 變更 shows a sample step selection. It is not saved and is not echoed.
+    // Click-through is cleared first so the sample glyphs can paint.
+    if (changeMode) {
+      const sample = overlayText(DRAG_PREVIEW_STATE, merged);
+      void (async () => {
+        if (isTauri()) {
+          await invoke("set_input_mode", { enabled: true }).catch(() => { });
+          if (cancelled) return;
+          await emit("overlay-text", sample).catch(() => { });
+          await emit("calculator-state", DRAG_PREVIEW_STATE).catch(() => { });
+          return;
+        }
+        publishOverlayText(sample);
+        publishCalculatorState(DRAG_PREVIEW_STATE);
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
-    publishOverlayText(overlayText(state, merged));
-  }, [state, labels, labelsReady]);
+    void (async () => {
+      if (isTauri()) {
+        await invoke("set_input_mode", { enabled: false }).catch(() => { });
+        if (cancelled) return;
+        await invoke("calculate_text", { state, labels: sparseLabels(merged) }).catch(() => { });
+        return;
+      }
+      publishOverlayText(overlayText(state, merged));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state, labels, labelsReady, changeMode]);
 
   useEffect(() => {
+    const shown = changeMode ? DRAG_PREVIEW_STATE : state;
     if (isTauri()) {
-      emit("calculator-state", state).catch(() => { });
+      emit("calculator-state", shown).catch(() => { });
       return;
     }
-    publishCalculatorState(state);
-  }, [state]);
+    publishCalculatorState(shown);
+  }, [state, changeMode]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -810,7 +844,8 @@ function App() {
         }
       });
       const unlistenReq = listen("calculator-state-request", () => {
-        emit("calculator-state", stateRef.current).catch(() => { });
+        const shown = changeModeRef.current ? DRAG_PREVIEW_STATE : stateRef.current;
+        emit("calculator-state", shown).catch(() => { });
       });
       return () => {
         unlistenSet.then((fn) => fn()).catch(() => { });

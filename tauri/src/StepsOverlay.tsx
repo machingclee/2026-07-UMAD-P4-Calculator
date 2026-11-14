@@ -15,6 +15,7 @@ import {
 import { parseDebuffOverlay } from "./debuffOverlay";
 import { StepsOverlayWizard } from "./StepsOverlayWizard";
 import {
+  DRAG_PREVIEW_STATE,
   EMPTY_STATE,
   parseState,
   wizardStep,
@@ -29,8 +30,8 @@ export default function StepsOverlay() {
   const [enabled, setEnabled] = useState(true);
   const [calc, setCalc] = useState<State>(EMPTY_STATE);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const initialFit = useRef(true);
-  const step = wizardStep(calc);
+  const shown = dragEnabled ? DRAG_PREVIEW_STATE : calc;
+  const step = wizardStep(shown);
 
   useEffect(() => {
     if (isTauri()) {
@@ -108,10 +109,13 @@ export default function StepsOverlay() {
     const el = boxRef.current;
     if (!el) return;
     if (!expanded || !enabled) return;
+    // Always bottom-anchored. The window is created so its bottom edge lands on
+    // the saved bottom, and every content change keeps that edge, so switching
+    // `變更` on and off (which changes the card height) cannot translate it.
+    // Growing from the top on enter and shrinking from the bottom on exit moved
+    // the card down one line per cycle, and the shift was saved as a position.
     const apply = () => {
-      const anchor = initialFit.current || dragEnabled ? "top" : "bottom";
-      initialFit.current = false;
-      void fitOverlayToElement(el, { anchor });
+      void fitOverlayToElement(el, { anchor: "bottom" });
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -159,7 +163,7 @@ export default function StepsOverlay() {
       {expanded && enabled ? (
         <>
           <StepsOverlayWizard
-            state={calc}
+            state={shown}
             step={step}
             dragEnabled={dragEnabled}
             onSet={(key, value) => {
