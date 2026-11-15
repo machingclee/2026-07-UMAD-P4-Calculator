@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npx tauri dev",
+    "start:dev": "npx tauri dev",
     "dev:web": "vite",
     "build": "tsc && vite build",
     "build:exe": "npx tauri build",
