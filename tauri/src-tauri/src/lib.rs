@@ -330,7 +330,7 @@ fn get_debuff_overlay(app: tauri::AppHandle) -> bool {
 #[tauri::command]
 fn set_debuff_overlay(app: tauri::AppHandle, enabled: bool) {
     config::update(&app, |c| c.debuff_overlay = Some(enabled));
-    win32::sync_icon_overlay_visibility();
+    win32::sync_overlay_visibility();
     let _ = app.emit("debuff-overlay", enabled);
 }
 
@@ -528,7 +528,7 @@ pub fn run() {
                         let _ = overlay_for_thread.run_on_main_thread(move || {
                             win32::apply_overlay_style(&overlay_w);
                             win32::prevent_activation(&overlay_w);
-                            win32::sync_icon_overlay_visibility();
+                            win32::sync_overlay_visibility();
                         });
                     }
                 }
