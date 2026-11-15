@@ -715,11 +715,20 @@ mod imp {
             return;
         };
         let _ = app.emit("app-expanded", expanded);
-        apply_icon_overlay_visibility(app);
+        apply_overlay_windows_visibility(app);
     }
 
-    fn apply_icon_overlay_visibility(app: &AppHandle) {
+    /// A shaded main window means the app is put away, so every overlay goes with
+    /// it. Expanding brings back the overlays the user has switched on.
+    fn apply_overlay_windows_visibility(app: &AppHandle) {
         let expanded = !TITLEBAR_SHADED.load(Ordering::SeqCst);
+        if let Some(w) = app.get_webview_window("overlay") {
+            if expanded {
+                let _ = w.show();
+            } else {
+                let _ = w.hide();
+            }
+        }
         let enabled = crate::config::load(app).debuff_overlay.unwrap_or(true);
         if let Some(w) = app.get_webview_window("overlay-icons") {
             if expanded && enabled {
@@ -915,14 +924,14 @@ mod imp {
         }
     }
 
-    pub fn sync_icon_overlay_visibility() {
+    pub fn sync_overlay_visibility() {
         let Ok(guard) = APP_HANDLE.lock() else {
             return;
         };
         let Some(app) = guard.as_ref() else {
             return;
         };
-        apply_icon_overlay_visibility(app);
+        apply_overlay_windows_visibility(app);
     }
 
     pub fn is_titlebar_shaded() -> bool {
@@ -1232,7 +1241,7 @@ mod imp {
 
     pub fn set_app_handle(_app: tauri::AppHandle) {}
 
-    pub fn sync_icon_overlay_visibility() {}
+    pub fn sync_overlay_visibility() {}
 
     pub fn already_running() -> bool {
         false
